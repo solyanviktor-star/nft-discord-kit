@@ -67,7 +67,10 @@ is verified the bot adds the person to the server with their roles.
   A link from another deployment (different server id) is refused.
 - Nonces are single use and expire after 10 minutes; a signature is only accepted for the exact
   message the server issued for that account and address.
-- Per-IP rate limit on `/api/*` and `/auth/*` (`web.rate_limit_per_minute`, default 30).
+- Per-IP rate limit on `/api/*` and `/auth/*` (`web.rate_limit_per_minute`, default 30). The client
+  address comes from `X-Forwarded-For` only when the request itself arrives from a loopback or
+  private address (Caddy, Docker, a platform's router) and `web.trust_proxy` is on; a client talking
+  to the app directly cannot choose its own rate-limit key.
 - POST endpoints accept JSON only and refuse a foreign `Origin`, so plain cross-site forms cannot post.
 - Cookies are HttpOnly and `SameSite=Lax` (and `Secure` on https). The OAuth `state` is random,
   kept in a signed cookie for 10 minutes and compared in constant time. After login the redirect goes
@@ -83,3 +86,11 @@ own browser (MetaMask, Coinbase Wallet, Trust Wallet, Phantom, and Solflare when
 **Copy link** button. Inside Discord's in-app browser it first asks to open the page in a real
 browser. Inside a wallet's browser it shows no such links and waits a few seconds for the wallet to
 appear, since some wallets inject themselves late.
+
+Those "Open in ..." links hand the page's full address, including the personal verify token, to
+the wallet maker's link service (e.g. `metamask.app.link`), because the wallet has to reopen exactly
+this page. The impact is low: the token expires 30 minutes after Verify was pressed, it cannot move
+or unlink anything, and linking a wallet still needs that wallet's signature. Within those minutes
+someone holding the token could see which wallets that Discord account has linked, or link a wallet
+of their own to it. The links appear only on a phone browser that has no wallet; the **Copy link**
+button and a desktop extension avoid them.

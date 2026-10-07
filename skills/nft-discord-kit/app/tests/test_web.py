@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import time
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from aiohttp.test_utils import make_mocked_request
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from nacl.signing import SigningKey
@@ -124,6 +127,25 @@ async def test_bad_and_expired_links(aiohttp_client, tmp_path, reader):
     assert (await r.json())["error"] == "This link belongs to another server."
     r = await client.post("/api/nonce", json={"state": good, "kind": "evm", "address": "0x1234"})
     assert (await r.json())["error"] == "That wallet address does not look right."
+
+
+LOOPBACK = str(ipaddress.IPv4Address(0x7F000001))  # a proxy on the same machine
+PUBLIC = str(ipaddress.IPv4Address(0x0B000001))  # any address on the internet
+
+
+async def test_forwarded_for_is_believed_only_from_a_proxy(tmp_path, reader):
+    def request(peer, forwarded):
+        transport = SimpleNamespace(get_extra_info=lambda name, default=None: (peer, 4321) if name == "peername"
+                                    else default)
+        return make_mocked_request("GET", "/api/me", headers={"X-Forwarded-For": forwarded}, transport=transport)
+
+    w = make_world(tmp_path, make_settings(), reader)
+    site = Site(w.kit, http=None, application_id=lambda: 1)  # type: ignore[arg-type]
+    assert site.client_ip(request(PUBLIC, "made-up")) == PUBLIC  # a direct client cannot pick its own key
+    assert site.client_ip(request(LOOPBACK, "made-up, real-client")) == "real-client"  # the hop the proxy added
+    off = Site(make_world(tmp_path / "off", make_settings(web={"trust_proxy": False}), reader).kit, http=None,
+               application_id=lambda: 1)  # type: ignore[arg-type]
+    assert off.client_ip(request(LOOPBACK, "real-client")) == LOOPBACK
 
 
 async def test_limits_and_headers(aiohttp_client, tmp_path, reader):

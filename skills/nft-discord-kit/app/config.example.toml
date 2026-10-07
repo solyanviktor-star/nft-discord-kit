@@ -28,7 +28,7 @@ self_roles = "claim-roles"
 [web]
 host = ""                            # "" = all interfaces (Docker, PaaS); "localhost" behind a local proxy
 port = 8080                          # the PORT env var wins (Railway, Render, Fly.io set it)
-trust_proxy = true                   # read the client IP from X-Forwarded-For (behind Caddy / a PaaS proxy)
+trust_proxy = true                   # X-Forwarded-For, but only from a proxy (a loopback or private address)
 rate_limit_per_minute = 30           # per IP, on /api and /auth
 
 [verification]

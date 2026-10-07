@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import html
+import ipaddress
 import logging
 import re
 import secrets
@@ -65,6 +66,14 @@ class RateLimiter:
         allowed = tokens >= 1
         self.buckets[key] = (tokens - 1 if allowed else tokens, now)
         return allowed
+
+
+def _is_proxy(address: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private
 
 
 async def json_body(request: web.Request) -> dict[str, Any]:
@@ -135,9 +144,14 @@ class Site:
         return resp
 
     def client_ip(self, request: web.Request) -> str:
-        """Behind a reverse proxy the last X-Forwarded-For hop is the one the proxy itself added."""
-        forwarded = request.headers.get("X-Forwarded-For", "") if self.s.web.trust_proxy else ""
-        return forwarded.split(",")[-1].strip() if forwarded else (request.remote or "?")
+        """The address the rate limit counts. X-Forwarded-For is believed only when the request itself comes
+        from a proxy on this machine or a private network (Caddy, Docker, a platform's router); anyone else
+        could write that header themselves. Its last hop is the one the proxy added."""
+        remote = request.remote or "?"
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded and self.s.web.trust_proxy and _is_proxy(remote):
+            return forwarded.split(",")[-1].strip() or remote
+        return remote
 
     def _render(self, name: str) -> str:
         p = self.s.project

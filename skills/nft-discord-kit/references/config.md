@@ -1,8 +1,11 @@
 # config.toml, every key
 
 `config.example.toml` is a commented copy of everything below. `python -m kit check` validates the
-whole file at once: wrong types, unknown keys (typos), bad addresses, broken regular expressions,
-missing references between sections. Secrets never go in this file; see "Environment" at the end.
+whole file at once: wrong types, unknown keys (typos), bad addresses, the example's placeholder
+contract, broken regular expressions, missing references between sections. It then asks each EVM
+collection's RPC whether code exists at the contract and warns when nothing is deployed there (a
+wrong address, or an RPC of another chain) or the RPC does not answer; `--offline` skips that.
+Secrets never go in this file; see "Environment" at the end.
 
 ## [project]
 
@@ -43,7 +46,7 @@ id. After `kit.setup build`, the ids saved in `data/state.json` are preferred.
 |---|---|---|
 | `host` | `""` | `""` listens on all interfaces (Docker, PaaS). Use `"localhost"` behind a proxy on the same machine. |
 | `port` | `8080` | `PORT` in the environment wins (Railway, Render and Fly.io set it). |
-| `trust_proxy` | `true` | Take the client IP from the last `X-Forwarded-For` hop (set by Caddy or the platform). Set `false` if the app faces the internet directly. |
+| `trust_proxy` | `true` | Take the client IP from the last `X-Forwarded-For` hop (the one Caddy or the platform added), but only for requests that come from a loopback or private address, i.e. from a proxy. Requests straight from the internet are always counted by their own address. `false` ignores the header entirely. |
 | `rate_limit_per_minute` | `30` | Requests per IP per minute on `/api/*` and `/auth/*`. |
 
 ## [verification]
@@ -155,7 +158,7 @@ The Discord login on the website turns on when `DISCORD_CLIENT_SECRET` is set.
 |---|---|
 | `DISCORD_TOKEN` | The bot token. Required. |
 | `DISCORD_CLIENT_SECRET` | OAuth client secret; turns on the website login. |
-| `SESSION_SECRET` | Signs verify links and login cookies (32+ characters). Empty: generated into `data/session_secret` and kept. Changing it invalidates open links and logins. |
+| `SESSION_SECRET` | Signs verify links and login cookies: 32 or more random characters (shorter is refused by `kit check` and `run`). Empty: generated into `data/session_secret` and kept, so on a host without a persistent disk set it here. Changing it invalidates open links and logins. |
 | `PUBLIC_URL` | Overrides `project.public_url`. |
 | `PORT` | Overrides `web.port`. |
 | `RPC_*` | RPC URLs, named by each collection's `rpc_env`. Never logged (only host names are). |
