@@ -23,19 +23,20 @@ What the person gets:
 - Optional last stage: entering raffles from the project's own website.
 
 Read a reference file only when a step needs it: `references/discord-app.md`,
-`references/server-template.md`, `references/config.md`, `references/verification.md`,
-`references/raffles.md`, `references/tickets-and-roles.md`, `references/hosting.md`,
-`references/website-raffles.md`, `references/troubleshooting.md`.
+`references/browser-setup.md`, `references/server-template.md`, `references/config.md`,
+`references/verification.md`, `references/raffles.md`, `references/tickets-and-roles.md`,
+`references/hosting.md`, `references/website-raffles.md`, `references/troubleshooting.md`.
 
 ## Guardrails (always)
 
 - **Never print, echo, log or commit a secret**: the bot token, the OAuth client secret, the session
   secret, keyed RPC URLs. Do not `cat .env`, do not repeat its values, do not put secrets in
   `config.toml`, commit messages or chat. `python -m kit check` shows only whether each secret is set.
-- Secrets live in `.env` only (gitignored; `.env.example` is the template). Ask the person to paste
-  the token into `.env` themselves (open the file for them). If they paste a secret into the chat
-  anyway, write it to `.env` without repeating it, and tell them they can reset it later if the chat
-  log is shared with anyone.
+- Secrets live in `.env` only (gitignored; `.env.example` is the template). The bot token gets there
+  through `python -m kit.setup token --from-clipboard` after the person presses Copy, so you never see
+  it; other secrets the person pastes into `.env` themselves (open the file for them). If they paste a
+  secret into the chat anyway, write it to `.env` without repeating it, and tell them they can reset
+  it later if the chat log is shared with anyone.
 - Before changing a server that already has channels of its own, show `python -m kit.setup plan`
   (read-only) and get an explicit yes. The builder only creates: it never deletes, renames or moves
   anything, and never edits an existing permission overwrite (it only adds missing ones).
@@ -66,25 +67,37 @@ Do not ask about raffles on their website yet; that is step 8.
 
 ## Step 1: Discord application, bot, and the app
 
-Copy and install the app first, so `.env` exists:
+Copy and install the app first:
 
 ```bash
 cp -r <this skill folder>/app ./discord-kit && cd discord-kit
-cp .env.example .env
+cp .env.example .env && cp config.example.toml config.toml   # then set project.name (and logo_url)
 python3 -m venv .venv && . .venv/bin/activate   # Windows: py -3.11 -m venv .venv; .venv\Scripts\activate
 pip install -r requirements-dev.txt
 python -m pytest -q                              # must pass before anything touches Discord
 ```
 
-Then the person clicks through https://discord.com/developers/applications (details:
-`references/discord-app.md`):
-1. **New Application**, name it.
-2. **Bot** tab: **Reset Token**, copy it, paste it into `.env` as `DISCORD_TOKEN=` (they do it).
-   Turn **Public Bot** off. Under **Privileged Gateway Intents** turn on **SERVER MEMBERS INTENT**
-   (roles, joins) and **MESSAGE CONTENT INTENT** (without it ticket transcripts come out empty).
-3. Only if they want "Verify with Discord" on their site (needed for auto-join and for website
+Only three steps need the person's own Discord account: creating the application (and copying its
+token), creating the server (step 2), approving the bot's invite (step 2). The agent does everything
+else with the bot token through Discord's API. Ask how they want to do those three:
+- **Manual** (default, about 3 minutes): they click, you say where (`references/discord-app.md`).
+- **Browser mode**, only if your agent has a browser tool and the person opts in: follow
+  `references/browser-setup.md`. Say it honestly first: Discord's rules forbid automating user
+  accounts, so this mode is at their own risk; it touches their account only for these three steps.
+
+Either way:
+1. At https://discord.com/developers/applications: **New Application** (a name) > **Bot** tab >
+   turn **Public Bot** off > **Reset Token** > **Copy**.
+2. Run `python -m kit.setup token --from-clipboard`: it reads the copied token, checks it with
+   Discord, writes `DISCORD_TOKEN=` into `.env` and prints only the application's name. The token never
+   passes through the chat or your context: never ask them to paste it to you.
+3. Run `python -m kit.setup app`: it turns on the privileged intents the bot needs (Server Members,
+   Message Content) and fills an empty description and icon (from `project.logo_url`). If Discord
+   refuses the intents (a verified app needs approval), it prints the manual step: Bot tab >
+   Privileged Gateway Intents > SERVER MEMBERS INTENT and MESSAGE CONTENT INTENT.
+4. Only if they want "Verify with Discord" on their site (needed for auto-join and for website
    raffles): **OAuth2** tab, add the redirect `https://<their domain>/auth/discord/callback`, reset
-   the **Client Secret** and paste it into `.env` as `DISCORD_CLIENT_SECRET=`.
+   the **Client Secret** and paste it into `.env` as `DISCORD_CLIENT_SECRET=` (they do it).
 
 RPC URLs go into `.env` under the env names `config.toml` uses (`RPC_ETHEREUM=...`; several URLs
 separated by commas are tried in order). A public endpoint works for small servers; a keyed one
@@ -93,13 +106,16 @@ separated by commas are tried in order). A public endpoint works for small serve
 ## Step 2: the server
 
 1. The person creates an empty server: Discord, **+** (Add a Server), **Create My Own**, **For me and
-   my friends**, a name. An existing server works too (then plan carefully, see the guardrails).
-2. `cp config.example.toml config.toml` and set `project.name` (`guild_id` stays 0 for now).
-3. `python -m kit.setup invite-url --admin` prints the link that adds the bot with Administrator,
+   my friends**, a name, **Create**. An existing server works too (then plan carefully, see the
+   guardrails).
+2. `python -m kit.setup invite-url --admin` prints the link that adds the bot with Administrator,
    which the build needs (the template's Team role carries Administrator, and a bot can only hand out
-   permissions it has). The person opens it, picks the server, authorizes. Without `--admin` the link
-   asks only for what the running bot needs; it is for a server whose layout is built already.
-4. `python -m kit.setup guilds` lists the servers the bot is in. Put the id into `discord.guild_id`.
+   permissions it has), and runs `app` again. The person opens the link, picks the server, presses
+   **Continue** and **Authorize**. Without `--admin` the link asks only for what the running bot
+   needs; it is for a server whose layout is built already.
+3. Meanwhile run `python -m kit.setup guilds --wait`: it notices the bot joining and saves the server
+   id into `config.toml` (`discord.guild_id`). If the bot is in several servers it lists them: ask
+   which one, then `python -m kit.setup guilds --pick <id>`.
 
 ## Step 3: config
 

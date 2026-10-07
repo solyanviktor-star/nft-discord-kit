@@ -1,28 +1,48 @@
 # Discord application and bot
 
-Everything here happens at https://discord.com/developers/applications, signed in as the person who
-will own the bot. The agent cannot click for them; read the steps out one at a time.
+Only three steps need the person's own Discord account: creating the application (and copying its
+token), creating the server, and approving the bot's invite. The person does them, or an agent with a
+browser tool does them in browser mode after the person opts in (`references/browser-setup.md`).
+Everything else the kit does with the bot token through Discord's official API.
 
-## 1. Create the application
+The kit never logs into the person's Discord account and never drives their browser by itself; the
+three account steps stay theirs, because Discord's rules forbid automating user accounts.
+
+## 1. Create the application and save its token
+
+At https://discord.com/developers/applications, signed in as the person who will own the bot:
 
 1. **New Application**, type a name (the bot shows up under this name), accept the terms, **Create**.
-2. Optional: **General Information**: an app icon and description.
+2. **Bot** tab: turn **Public Bot** off (otherwise anyone with the client id could add the bot to
+   their own server).
+3. **Reset Token**, confirm (with 2FA if asked), **Copy**.
+4. The agent runs `python -m kit.setup token --from-clipboard`: it reads the clipboard, checks the
+   token with Discord (`GET /applications/@me`), writes the `DISCORD_TOKEN=` line of `.env` (creating
+   or replacing only that line) and prints only the application's name. The token never passes through
+   a chat or the agent's context. A token is shown once; if it is lost or leaked, reset it and run the
+   command again. Without a desktop (a server over SSH) the clipboard cannot be read; then the person
+   pastes it into `.env` by hand.
 
-## 2. The bot user and its token
+## 2. Intents, description, icon: `python -m kit.setup app`
 
-1. **Bot** tab.
-2. **Reset Token**, confirm, **Copy**. Paste it into `.env` as `DISCORD_TOKEN=...`
-   (the person pastes it themselves; nobody else needs to see it). Discord shows a token once; if it
-   is lost or leaked, reset it again and update `.env`.
-3. **Public Bot**: off. Otherwise anyone with the client id could add the bot to their own server.
-4. **Privileged Gateway Intents**: turn on **SERVER MEMBERS INTENT** and **MESSAGE CONTENT INTENT**,
-   then **Save Changes**.
-   - Server Members: the bot sees members join, reads their roles and pings staff one by one.
-     Without it `python -m kit run` stops with "Turn on SERVER MEMBERS INTENT ...".
-   - Message Content: when a ticket is closed the bot reads the thread for the transcript; without this
-     switch Discord hands out other people's messages with empty text, and the transcript is blank
-     (the log then says so). The bot reads message text for nothing else.
-   - Presence is not needed.
+The agent runs `python -m kit.setup app` (`invite-url` also runs it). With the bot token it:
+
+- turns on the two privileged intents the bot needs, the same switches as the Bot tab's
+  **Privileged Gateway Intents** (Discord sets the "limited" flags for a bot in fewer than 100
+  servers; every other application flag stays as it is):
+  - **Server Members**: the bot sees members join, reads their roles and pings staff one by one.
+    Without it `python -m kit run` stops and says so.
+  - **Message Content**: when a ticket is closed the bot reads the thread for the transcript; without
+    it Discord hands out other people's messages with empty text and the transcript is blank (the log
+    then says so). The bot reads message text for nothing else. Presence is not needed.
+- sets the description ("<Project> holder verification, raffles and support") and the icon (downloaded
+  from `project.logo_url`: PNG, JPEG or GIF up to 4 MB) when they are empty;
+  `--force-branding` replaces existing ones.
+
+If Discord refuses the intents (a verified app needs Discord's approval for them), the command prints
+the manual step: Developer Portal > the application > **Bot** > **Privileged Gateway Intents** > turn on
+**SERVER MEMBERS INTENT** and **MESSAGE CONTENT INTENT** > **Save Changes**. `python -m kit check` shows
+the intents' state (on, limited, off) at any time.
 
 ## 3. Optional: the website login (OAuth2)
 
@@ -40,11 +60,18 @@ Scopes asked for: `identify` (who is logging in), plus `guilds.join` when `oauth
 (lets the bot add the person to the server once their wallet is verified). The bot never stores
 OAuth tokens on disk; a `guilds.join` token is kept in memory for 30 minutes and used once.
 
-## 4. Invite the bot
+## 4. The server and the invite
 
-`python -m kit.setup invite-url` prints the invite link (it reads the token from `.env`) and, under
-it, the permissions the link asks for. Scopes: `bot applications.commands`. The person opens the
-link, picks the server and authorizes.
+1. The person creates the server in the Discord app: **+** (Add a Server) > **Create My Own** >
+   **For me and my friends** > a name > **Create**.
+2. The agent runs `python -m kit.setup invite-url --admin`. It prints the invite link and, under it,
+   the permissions the link asks for (scopes: `bot applications.commands`), then runs `app`.
+3. The person opens the link, picks the server, presses **Continue** and **Authorize**.
+4. Meanwhile the agent runs `python -m kit.setup guilds --wait`. It asks Discord every 5 seconds
+   (up to 10 minutes, `--timeout`) which servers the bot is in; as soon as it is in exactly one, it
+   writes that id into `config.toml` as `discord.guild_id` (one line edited in place, comments kept)
+   and prints the server's name. If the bot is in several servers it lists them; ask the person which
+   one, then `python -m kit.setup guilds --pick <id>`.
 
 Two sets of permissions matter:
 

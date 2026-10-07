@@ -48,8 +48,13 @@ Then ask your agent: *"Set up a holder-gated Discord for our NFT collection."*
 
 0. Asks about your project in one go (collections, tiers, raffle chains, staff, modules, hosting),
    with sensible defaults.
-1. Has you create the Discord application and bot (token straight into `.env`, members intent on).
-2. Has you create an empty server and invite the bot; finds the server id for you.
+1. Has you create the Discord application and press Copy on its token; saves it into `.env` from
+   the clipboard (it never passes through the chat), then turns on the bot's intents and sets its
+   description and icon through Discord's API.
+2. Has you create an empty server and approve the bot's invite; picks up the server id by itself.
+   Only these three steps need your Discord account. You click them (about three minutes), or, if the
+   agent has a browser tool and you opt in, it clicks them for you (Discord's rules forbid automating
+   user accounts, so that mode is at your own risk).
 3. Writes `config.toml` and validates it.
 4. Shows a read-only plan of the server layout, then builds it after your yes.
 5. Deploys to the host you picked, on your domain with HTTPS.
@@ -65,8 +70,9 @@ Secrets stay in `.env` (gitignored); the playbook tells the agent never to print
 .claude-plugin/           plugin.json and marketplace.json (one plugin, source "./")
 skills/nft-discord-kit/
   SKILL.md                the agent's playbook
-  references/             loaded on demand: discord-app, server-template, config, verification,
-                          raffles, tickets-and-roles, hosting, website-raffles, troubleshooting
+  references/             loaded on demand: discord-app, browser-setup, server-template, config,
+                          verification, raffles, tickets-and-roles, hosting, website-raffles,
+                          troubleshooting
   app/                    the application the agent copies into your project
     kit/                  the Python package (pure logic modules, kit/bot = Discord, kit/web = site)
     templates/server.toml the server layout

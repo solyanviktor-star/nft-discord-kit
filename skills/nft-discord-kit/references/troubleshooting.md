@@ -6,7 +6,7 @@ never contains secrets; RPC endpoints appear by host name only.
 ## Setup commands
 
 **`50001 Missing Access`.** The bot is not in that server (wrong `discord.guild_id`, or the invite was
-never completed) or cannot see that channel. Run `python -m kit.setup guilds`; open the invite link
+never completed) or cannot see that channel. Run `python -m kit.setup guilds --wait`; open the invite link
 again; check the channel's permissions for the bot.
 
 **`50013 Missing Permissions`.** The bot lacks a permission for what it tried: during `build` usually
@@ -43,8 +43,14 @@ when the node did not answer.
 
 ## The bot does not start
 
-**"Turn on SERVER MEMBERS INTENT".** Developer Portal > Bot > Privileged Gateway Intents > Server
-Members Intent, save, restart. The bot needs it to see joins and read roles.
+**"The bot's SERVER MEMBERS INTENT is off".** Run `python -m kit.setup app` (it turns the intents on
+through the API), then restart. If Discord refuses that (a verified app needs approval), Developer
+Portal > Bot > Privileged Gateway Intents > Server Members Intent, save, restart. `python -m kit check`
+shows the intents' state. The bot needs it to see joins and read roles.
+
+**`kit.setup token --from-clipboard` cannot read the clipboard.** It needs a desktop session on the
+machine the kit runs on (over SSH there is none) and Python's tkinter (Debian/Ubuntu:
+`apt install python3-tk`). Otherwise the person pastes the token into `.env` as `DISCORD_TOKEN=`.
 
 **Slash commands missing.** The process must be running; the bot registers `/nft` for the configured
 server at start. If they still do not appear, it was invited without the `applications.commands`

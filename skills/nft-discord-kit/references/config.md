@@ -20,7 +20,7 @@ Secrets never go in this file; see "Environment" at the end.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `guild_id` | `0` | The server id (`python -m kit.setup guilds`). Number or string. Required for `run` and the setup commands that touch a server. |
+| `guild_id` | `0` | The server id; `python -m kit.setup guilds --wait` writes it here once the bot has joined. Number or string. Required for `run` and the setup commands that touch a server. |
 | `application_id` | `0` | Only if reading it from the token is blocked; the OAuth client id. |
 | `staff_roles` | `["Team", "Mod"]` | A member is staff when a role name **starts with** one of these, or they have Manage Server. Staff run every team command. |
 | `raffle_manager_roles` | `["Raffle Manager"]` | These roles (by prefix) may run the raffle commands only. |
