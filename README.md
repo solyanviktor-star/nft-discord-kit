@@ -33,7 +33,7 @@ Caddy, Railway, Render, Fly.io.
 **As a Claude Code plugin** (from a clone or from GitHub):
 
 ```bash
-claude plugin marketplace add <github-user>/nft-discord-kit     # or a local path to this repo
+claude plugin marketplace add solyanviktor-star/nft-discord-kit   # or a local path to this repo
 claude plugin install nft-discord-kit@nft-discord-kit
 ```
 
