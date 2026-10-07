@@ -166,9 +166,27 @@ async def finish(bot: KitBot, r: Raffle, reroll_n: int | None = None) -> tuple[l
         kit.drawing.discard(r.id)
 
 
+class AnnounceError(Exception):
+    """The winners cannot be announced; the raffle stays open and the ticker tries again later."""
+
+
+async def winners_channel(bot: KitBot, r: Raffle) -> Any:
+    """[channels] winners, else the raffle's own channel (fetched when it is not in the cache)."""
+    channel = bot.channel("winners") or bot.get_channel(int(r.channel_id))
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(int(r.channel_id))
+        except discord.HTTPException:
+            channel = None
+    if channel is None:
+        raise AnnounceError("no channel to announce the winners in: set [channels] winners in config.toml, or let "
+                            "the bot see the raffle's channel")
+    return channel
+
+
 async def _finish_draw(bot: KitBot, r: Raffle, reroll_n: int | None) -> tuple[list[str], list[str]]:
     kit = bot.kit
-    win_ch = bot.channel("winners") or bot.get_channel(int(r.channel_id))
+    win_ch = await winners_channel(bot, r)  # before the draw: no recount when it could not be announced
     if reroll_n is None:
         gtd, fcfs = await kit.draw(r)
     else:
@@ -182,10 +200,14 @@ async def _finish_draw(bot: KitBot, r: Raffle, reroll_n: int | None) -> tuple[li
     chunks = mention_chunks(users)
     mentions = discord.AllowedMentions(users=True, roles=False, everyone=False)
     embed = winners_embed(r, gtd, fcfs, brand(bot), "REROLL · " if reroll_n is not None else "")
-    msg = await win_ch.send(content=chunks[0] if chunks else "No eligible entrants.",
-                            embed=discord.Embed.from_dict(embed), view=view, allowed_mentions=mentions)
-    for extra in chunks[1:]:
-        await win_ch.send(content=extra, allowed_mentions=mentions)
+    try:
+        msg = await win_ch.send(content=chunks[0] if chunks else "No eligible entrants.",
+                                embed=discord.Embed.from_dict(embed), view=view, allowed_mentions=mentions)
+        for extra in chunks[1:]:
+            await win_ch.send(content=extra, allowed_mentions=mentions)
+    except discord.Forbidden as e:
+        raise AnnounceError(f"the bot may not post in #{win_ch.name} ({e.text}): give it View Channel, Send "
+                            "Messages and Embed Links there") from e
     fresh = kit.store.raffle(r.id) or r
     if reroll_n is None:
         kit.close_raffle(fresh, gtd, fcfs, str(msg.id), str(win_ch.id))
@@ -333,10 +355,16 @@ async def cmd_panel(bot: KitBot, interaction: discord.Interaction) -> None:
     """Post the verification panel in this channel (`kit.setup panels` does the same over REST)."""
     if await _denied(bot, interaction):
         return
+    await interaction.response.defer(ephemeral=True, thinking=True)  # the post itself may take over 3 s
     role_ids = {name: str(role.id) for name in bot.s.holder_roles() if (role := bot.role(name))}
     payload = verify_panel(bot.s, role_ids)
-    await interaction.channel.send(embed=discord.Embed.from_dict(payload["embeds"][0]), view=VerifyPanel())
-    await interaction.response.send_message("Panel posted.", ephemeral=True)
+    try:
+        await interaction.channel.send(embed=discord.Embed.from_dict(payload["embeds"][0]), view=VerifyPanel())
+    except discord.HTTPException as e:
+        await interaction.followup.send(f"Could not post here: {e.text or e.status}. Give the bot View / Send / Embed "
+                                        "Links in this channel.", ephemeral=True)
+        return
+    await interaction.followup.send("Panel posted.", ephemeral=True)
 
 
 def giveaways_embed(bot: KitBot, user_id: str) -> discord.Embed:

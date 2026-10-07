@@ -274,13 +274,14 @@ class FakeBot(KitBot):
     def __init__(self, kit: Kit, data_dir: Path, guild: FakeGuild):
         super().__init__(kit, http=None, data_dir=data_dir)  # type: ignore[arg-type]
         self.fake_guild = guild
+        self.uncached: set[int] = set()  # channels get_channel misses but fetch_channel finds
 
     @property
     def guild(self) -> FakeGuild:  # type: ignore[override]
         return self.fake_guild
 
     def get_channel(self, channel_id: int) -> Any:  # type: ignore[override]
-        return self.fake_guild.get_channel(channel_id)
+        return None if int(channel_id) in self.uncached else self.fake_guild.get_channel(channel_id)
 
     async def fetch_channel(self, channel_id: int) -> Any:  # type: ignore[override]
         found = self.fake_guild.get_channel(channel_id)

@@ -6,15 +6,18 @@ import io
 import json
 import random
 import time
+from types import SimpleNamespace
 
+import discord
 import pytest
 
-from conftest import b58encode
+from conftest import b58encode, make_settings
 from fakes import FakeMessage, FakeUser, forbidden, make_world, next_id
 from kit.bot import raffles as rb
 from kit.bot import support as sb
 from kit.bot import verify as vb
 from kit.bot.commands import cmd_check, cmd_me
+from kit.bot.common import can_run_raffles, is_admin
 from kit.raffles import ENDED, OPEN
 
 EVM_A = "0x" + "aa" * 20
@@ -342,10 +345,33 @@ async def test_ticker_draws_due_raffles_even_when_one_fails(world):
 
     world.channels["winners"].send = flaky
     await world.bot.tick(1, set())
-    statuses = {world.kit.store.raffle(broken.id).status, world.kit.store.raffle(fine.id).status}
-    assert statuses == {OPEN, ENDED}  # the failing one stays open and is retried next tick
+    statuses = {r: world.kit.store.raffle(r).status for r in (broken.id, fine.id)}
+    assert sorted(statuses.values()) == [ENDED, OPEN]  # the failing one stays open, the other is drawn
+    failed = next(r for r, status in statuses.items() if status == OPEN)
+    assert world.bot._retry[failed][1] == 60  # retried after a minute, not on every 30-second tick
     await world.bot.tick(1, set())
-    assert world.kit.store.raffle(broken.id).status == ENDED
+    assert calls["n"] == 2 and world.kit.store.raffle(failed).status == OPEN
+    world.bot._retry[failed] = (0.0, 60)  # the minute has passed
+    await world.bot.tick(1, set())
+    assert world.kit.store.raffle(failed).status == ENDED and failed not in world.bot._retry
+
+
+async def test_no_winners_channel_backs_off_and_says_why(world, caplog, tmp_path):
+    r = new_raffle(world, ends_in=-10)
+    world.bot.s = world.kit.s = make_settings(channels={"winners": "renamed-away"})
+    world.bot.uncached.add(int(r.channel_id))
+    lost = world.channels["giveaways"]
+    del world.guild.channels[lost.id]  # neither cached nor fetchable
+    await world.bot.tick(1, set())
+    assert world.kit.store.raffle(r.id).status == OPEN and world.bot._retry[r.id][1] == 60
+    assert "no channel to announce the winners in" in caplog.text and "next try in 1 minutes" in caplog.text
+    world.bot._retry[r.id] = (0.0, 60)
+    await world.bot.tick(1, set())
+    assert world.bot._retry[r.id][1] == 120  # doubling, up to an hour
+    world.guild.channels[lost.id] = lost  # back, but only through fetch_channel
+    world.bot._retry[r.id] = (0.0, 120)
+    await world.bot.tick(1, set())
+    assert world.kit.store.raffle(r.id).status == ENDED and lost.messages[-1].content == "No eligible entrants."
 
 
 # --- cards -------------------------------------------------------------------------------------------
@@ -537,6 +563,34 @@ async def test_ticket_mentions_a_mentionable_staff_role_and_handles_missing_righ
     assert "the bot lacks Create Private Threads there" in i.replies[0]
 
 
+async def test_empty_transcript_points_at_the_message_content_intent(world, caplog):
+    i = world.interaction(world.holder, world.channels["tickets"])
+    await i.response.defer()
+    await sb.ticket_open(world.bot, i, i.client.s.support.categories[0], "Question")
+    [thread] = world.channels["tickets"].threads
+    thread.messages.append(FakeMessage(1, thread, "", author=world.holder))  # what Discord sends without the intent
+    closing = world.interaction(world.holder, thread)
+    await sb.ticket_close(world.bot, closing)
+    assert "turn on MESSAGE CONTENT INTENT" in caplog.text
+    text = world.channels["ticket_log"].messages[-1].file.fp.read().decode()
+    assert "MESSAGE CONTENT INTENT" in text.splitlines()[1]
+
+
+async def test_ticket_button_checks_the_cache_only(world):
+    i = world.interaction(world.holder, world.channels["tickets"])
+    await i.response.defer()
+    await sb.ticket_open(world.bot, i, i.client.s.support.categories[0], "Question")
+    [thread] = world.channels["tickets"].threads
+    world.bot.uncached.add(thread.id)  # open, but not in the cache: the button must not fetch (3-second limit)
+    press = world.interaction(world.holder, world.channels["tickets"])
+    await sb.ticket_start(world.bot, press, "support")
+    assert press.log[0][0] == "modal"
+    submit = world.interaction(world.holder, world.channels["tickets"])
+    await submit.response.defer()
+    await sb.ticket_open(world.bot, submit, submit.client.s.support.categories[1], "Again")
+    assert submit.replies == [f"You already have an open ticket: {thread.mention}"]  # the submit fetches
+
+
 async def test_close_outside_a_ticket(world):
     i = world.interaction(world.staff, world.channels["giveaways"])
     await sb.ticket_close(world.bot, i)
@@ -547,6 +601,7 @@ async def test_close_outside_a_ticket(world):
 async def test_self_role_toggle(world):
     i = world.interaction(world.newbie)
     await sb.toggle_self_role(world.bot, i, "giveaway-alerts")
+    assert i.log[0][0] == "defer"  # answered before the role change goes to Discord
     assert i.replies == [f"You now have {world.role('Giveaway Alerts').mention}."]
     i = world.interaction(world.newbie)
     await sb.toggle_self_role(world.bot, i, "giveaway-alerts")
@@ -554,6 +609,65 @@ async def test_self_role_toggle(world):
     i = world.interaction(world.newbie)
     await sb.toggle_self_role(world.bot, i, "nope")
     assert i.replies == ["This role is not available right now."]
+
+
+async def test_self_role_errors_are_answered(world):
+    async def broken(*roles, reason=""):
+        raise discord.HTTPException(SimpleNamespace(status=500, reason="Server Error"), "boom")
+    world.newbie.add_roles = broken
+    i = world.interaction(world.newbie)
+    await sb.toggle_self_role(world.bot, i, "giveaway-alerts")
+    assert i.replies == ["Discord did not take that right now (500). Try again in a minute."]
+    world.newbie.forbid_roles = True
+    del world.newbie.add_roles
+    i = world.interaction(world.newbie)
+    await sb.toggle_self_role(world.bot, i, "giveaway-alerts")
+    assert i.replies[0].startswith("I cannot manage that role")
+
+
+async def test_panel_command_defers_before_posting(world):
+    i = world.interaction(world.staff, world.channels["verify"])
+    await rb.cmd_panel(world.bot, i)
+    assert [kind for kind, _, _ in i.log] == ["defer", "followup"] and i.replies == ["Panel posted."]
+    panel = world.channels["verify"].messages[-1]
+    assert panel.embeds[0].title == "Verify your Test Project holdings"
+    assert [c.custom_id for c in panel.view.children] == ["kit:verify", "kit:wallets"]
+
+
+async def test_setup_hook_survives_a_failed_command_sync(world, caplog):
+    async def refused(guild=None):
+        raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), {"code": 50001, "message": "Missing Access"})
+
+    async def no_ticker():
+        return None
+
+    world.bot.tree.sync = refused
+    world.bot.ticker = no_ticker
+    await world.bot.setup_hook()  # must not raise: a crash here would restart the process forever
+    assert "could not register the /nft commands" in caplog.text and "invite-url" in caplog.text
+
+
+async def test_staff_and_manager_roles_match_whole_names(world):
+    for name in ("Model Citizen", "\U0001F6E1 Mod", "Raffle Managers Fan Club", "raffle manager"):
+        world.guild.add_role(name)
+    lookalike = world.guild.add_member(8001, "lookalike", "Model Citizen")
+    shielded = world.guild.add_member(8002, "shielded", "\U0001F6E1 Mod")
+    fan = world.guild.add_member(8003, "fan", "Raffle Managers Fan Club")
+    lower = world.guild.add_member(8004, "lower", "raffle manager")
+    assert not is_admin(world.bot, lookalike) and is_admin(world.bot, shielded)
+    assert not can_run_raffles(world.bot, fan) and can_run_raffles(world.bot, lower)
+
+
+async def test_renamed_kit_role_is_still_managed(world):
+    holder = world.role("Holder")
+    (world.bot.data_dir / "state.json").write_text(json.dumps({"roles": {"Holder": str(holder.id)}}), encoding="utf-8")
+    holder.name = "\U0001F48E Holders"  # renamed in Discord after the build
+    link(world, world.holder, count=1)
+    report = await world.kit.sync_user(str(world.holder.id), "test")
+    assert report.added == [] and world.holder.roles.count(holder) == 1  # already has it: nothing added
+    world.reader.counts[EVM_A] = 0
+    report = await world.kit.sync_user(str(world.holder.id), "test")
+    assert report.removed == ["Holder"] and holder not in world.holder.roles
 
 
 async def test_giveaways_overview(world):

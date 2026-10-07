@@ -35,6 +35,10 @@ Messages in Threads, Manage Threads (to lock and remove people), and Mention Eve
 are not mentionable. The template's tickets channel grants exactly these. In the log channel: View,
 Send, Embed Links, Attach Files.
 
+Transcripts need **MESSAGE CONTENT INTENT** switched on in the Developer Portal (Bot tab): without it
+Discord hands the bot other people's messages with empty text. If every member message of a ticket
+comes back empty, the log and the transcript file both say to turn it on.
+
 Members cannot post in the tickets channel itself (read-only for holders), but they can write inside
 the private thread they were added to (`allow_threads = true` in the template keeps "Send Messages
 in Threads" open).

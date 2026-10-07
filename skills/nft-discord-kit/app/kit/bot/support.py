@@ -83,12 +83,15 @@ class TicketModal(discord.ui.Modal):
         await ticket_open(self.bot, interaction, self.cat, str(self.question.value).strip())
 
 
-async def open_tickets(bot: KitBot, user_id: str) -> list[Any]:
+async def open_tickets(bot: KitBot, user_id: str, fetch: bool = True) -> list[Any]:
     """The person's open ticket threads that still exist and are not archived; a thread that is gone or
-    archived closes its record on the way."""
+    archived closes its record on the way. `fetch=False` looks at the cache only and changes nothing
+    (for the button, which must open its modal within 3 seconds)."""
     out = []
     for rec in bot.kit.store.open_tickets(user_id):
         thread = bot.get_channel(int(rec["thread"]))
+        if thread is None and not fetch:
+            continue
         if thread is None:
             try:
                 thread = await bot.fetch_channel(int(rec["thread"]))
@@ -107,7 +110,7 @@ async def ticket_start(bot: KitBot, interaction: discord.Interaction, slug: str)
     if member is None or not bot.s.support.enabled:
         await interaction.response.send_message("Tickets are opened from the server.", ephemeral=True)
         return
-    mine = await open_tickets(bot, str(member.id))
+    mine = await open_tickets(bot, str(member.id), fetch=False)  # ticket_open checks again, fetching
     if len(mine) >= bot.s.support.max_open and not is_support_staff(bot, member):
         await interaction.response.send_message(
             f"You already have an open ticket: {mine[0].mention} — write there, or close it first.", ephemeral=True)
@@ -251,6 +254,11 @@ async def ticket_close(bot: KitBot, interaction: discord.Interaction, note: str 
                          "bot": bool(m.author.bot), "text": text[:4000], "files": [a.url for a in m.attachments]})
     except discord.HTTPException as e:
         log.warning("ticket #%s: history: %s", rec.get("n"), e)
+    people = [row for row in rows if not row["bot"]]
+    blank = bool(people) and not any(row["text"] or row["files"] for row in people)
+    if blank:  # without the MESSAGE CONTENT intent Discord hands out other people's messages empty
+        log.warning("ticket #%s: every member message came back empty: turn on MESSAGE CONTENT INTENT "
+                    "(Developer Portal > Bot) so transcripts keep the text", rec.get("n"))
     rec.update(status="closed", closed_at=int(time.time()), closed_by=str(interaction.user.id),
                closed_name=interaction.user.name, messages=len(rows), note=(note or "")[:300])
     folder = bot.data_dir / "tickets"
@@ -270,6 +278,9 @@ async def ticket_close(bot: KitBot, interaction: discord.Interaction, note: str 
 
     head = (f"Ticket #{int(rec['n'])} · {rec.get('cat')} · opened by {rec.get('name')} · closed by "
             f"{interaction.user.name}")
+    if blank:
+        head += ("\n(Members' message text came back empty: turn on MESSAGE CONTENT INTENT in the Developer "
+                 "Portal, Bot tab, so transcripts keep it.)")
     data = io.BytesIO(transcript(head, rows, name_of).encode("utf-8"))
     await ticket_log(bot, f"{cat.emoji} Ticket #{int(rec['n'])} closed · {rec.get('cat')}".strip(),
                      f"<@{rec.get('user')}> · closed by {interaction.user.mention} · "
@@ -343,6 +354,7 @@ async def toggle_self_role(bot: KitBot, interaction: discord.Interaction, slug: 
     if role is None or member is None:
         await interaction.response.send_message("This role is not available right now.", ephemeral=True)
         return
+    await interaction.response.defer(ephemeral=True, thinking=True)  # the role change is a Discord call
     try:
         if any(r.id == role.id for r in member.roles):
             await member.remove_roles(role, reason="self-role")
@@ -352,4 +364,6 @@ async def toggle_self_role(bot: KitBot, interaction: discord.Interaction, slug: 
             text = f"You now have {role.mention}."
     except discord.Forbidden:
         text = "I cannot manage that role: my own role must sit above it (Server Settings > Roles)."
-    await interaction.response.send_message(text, ephemeral=True)
+    except discord.HTTPException as e:
+        text = f"Discord did not take that right now ({e.status}). Try again in a minute."
+    await interaction.followup.send(text, ephemeral=True)

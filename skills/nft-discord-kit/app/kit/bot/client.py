@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -18,10 +20,11 @@ from .. import statefile
 from ..rest import DiscordError, Rest
 from ..service import Kit, MemberInfo
 from . import commands, raffles, support, verify
-from .common import member_info
+from .common import member_info, role_key
 
 log = logging.getLogger("kit.bot")
 TICK = 30  # seconds
+RETRY_FIRST, RETRY_MAX = 60, 3600  # a draw that failed is retried after 1 minute, doubling up to an hour
 
 
 class GuildPort:
@@ -47,7 +50,14 @@ class GuildPort:
 
     async def get_member(self, user_id: str) -> MemberInfo | None:
         found = await self.member(user_id)
-        return member_info(found) if found else None
+        if found is None:
+            return None
+        info = member_info(found)
+        # Kit roles go by their config names; on the server a role may have been renamed since the build
+        # (its saved id still finds it), so a member wearing it counts as wearing the config name.
+        held = {r.id for r in found.roles}
+        aliases = {n for n in self.bot.s.holder_roles() if (role := self.bot.role(n)) is not None and role.id in held}
+        return replace(info, role_names=info.role_names | aliases)
 
     async def edit_roles(self, user_id: str, add: set[str], remove: set[str], reason: str) -> list[str]:
         """Only the roles named here move; every other role of the member stays as it is."""
@@ -108,6 +118,7 @@ class KitBot(discord.Client):
         self._saved: dict[str, Any] = {}
         self._saved_mtime = -1.0
         self._tasks: set[asyncio.Task] = set()
+        self._retry: dict[str, tuple[float, float]] = {}  # raffle id -> (next try, delay) after a failed draw
 
     # where things are ---------------------------------------------------------------------------------
     @property
@@ -126,14 +137,15 @@ class KitBot(discord.Client):
         return self._saved
 
     def role(self, name: str) -> Any | None:
-        """A role by config name: the id the builder saved, else the name (exact, then ignoring case)."""
+        """A role by config name: the id the builder saved, else the exact name, else the same name in another
+        case or with an emoji at either end."""
         guild = self.guild
         if guild is None or not name:
             return None
         saved = str(self.saved().get("roles", {}).get(name, ""))
         role = guild.get_role(int(saved)) if saved.isdigit() else None
         return (role or discord.utils.get(guild.roles, name=name)
-                or next((r for r in guild.roles if r.name.casefold() == name.casefold()), None))
+                or next((r for r in guild.roles if role_key(r.name) == role_key(name)), None))
 
     def channel(self, purpose: str) -> Any | None:
         """The text channel for a purpose in config [channels] (verify, giveaways, winners, tickets, ...)."""
@@ -158,7 +170,12 @@ class KitBot(discord.Client):
         guild = discord.Object(id=self.s.discord.guild_id)
         self.tree.add_command(commands.build(self), guild=guild)
         self.tree.on_error = self.on_app_error
-        await self.tree.sync(guild=guild)
+        try:
+            await self.tree.sync(guild=guild)
+        except discord.HTTPException as e:  # keep running: the panels, the ticker and the website still work
+            log.error("could not register the /nft commands in server %s (%s): the bot is not in that server, or "
+                      "was invited without the applications.commands scope. Open the link from `python -m "
+                      "kit.setup invite-url`, then restart.", self.s.discord.guild_id, e)
         self.spawn(self.ticker())
 
     async def on_ready(self) -> None:
@@ -186,11 +203,19 @@ class KitBot(discord.Client):
             await asyncio.sleep(TICK)
 
     async def tick(self, ticks: int, known: set[str] | None) -> None:
+        now = time.time()
         for r in self.kit.due_raffles():
+            next_try, delay = self._retry.get(r.id, (0.0, 0.0))
+            if now < next_try:
+                continue
             try:  # each raffle on its own: one that keeps failing must not hold up the others
                 await raffles.finish(self, r)
-            except Exception:  # noqa: BLE001
-                log.exception("raffle %s: the draw failed; trying again on the next tick", r.id)
+                self._retry.pop(r.id, None)
+            except Exception as e:  # noqa: BLE001
+                delay = min(RETRY_MAX, max(RETRY_FIRST, delay * 2))
+                self._retry[r.id] = (now + delay, delay)
+                log.error("raffle %s: the draw failed (%s); the raffle stays open, next try in %d minutes", r.id,
+                          e, delay // 60, exc_info=not isinstance(e, raffles.AnnounceError))
         try:
             await self.cards.flush()
         except Exception as e:  # noqa: BLE001

@@ -5,6 +5,7 @@ isinstance on discord.py classes, so the test suite can drive the handlers with 
 """
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from ..config import Settings
@@ -25,9 +26,16 @@ def as_member(user: Any) -> Any | None:
     return user if getattr(user, "roles", None) is not None else None
 
 
+def role_key(name: str) -> str:
+    """A role name for matching: whole name, any case, emojis and separators at either end ignored
+    ("Mod" matches "mod" and "\U0001F6E1 Mod", not "Model Citizen")."""
+    key = re.sub(r"^[^0-9a-z]+|[^0-9a-z]+$", "", name.casefold())
+    return re.sub(r"\s+", " ", key) or name.casefold()
+
+
 def _has_role(member: Any, names: tuple[str, ...]) -> bool:
-    """Role names match by prefix, so "Team" also covers "Team Lead"."""
-    return bool(names) and any(r.name.startswith(names) for r in getattr(member, "roles", ()))
+    keys = {role_key(n) for n in names}
+    return bool(keys) and any(role_key(r.name) in keys for r in getattr(member, "roles", ()))
 
 
 def is_admin(bot: KitBot, member: Any) -> bool:

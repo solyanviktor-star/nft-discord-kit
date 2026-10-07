@@ -93,8 +93,10 @@ no entries (from the button or the website), so nobody slips in between the reco
    only when the list is too long for an embed), and a **View Giveaway** button back to the card.
 4. The raffle is marked ended with the winners and their wallets saved; the card turns `[ENDED]`.
 
-If posting the winners fails (for example the bot cannot write in the winners channel), the raffle
-stays open and the next tick tries again; other raffles are not held up.
+If the winners cannot be announced (no winners channel and the raffle's channel is gone, or the bot
+may not write there), nothing is drawn yet: the raffle stays open, the log says why, and the bot
+tries again after a minute, then after 2, 4, ... up to once an hour, until it works. Other raffles are
+not held up. `/nft raffle end` shows the same reason right away.
 
 ## Data
 
