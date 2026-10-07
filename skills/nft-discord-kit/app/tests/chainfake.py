@@ -61,6 +61,7 @@ class FakeNode:
         self.owners: dict[str, dict[int, str]] = {}  # contract -> token id -> owner (missing: revert)
         self.code: dict[str, str] = {}  # address -> bytecode
         self.valid_1271: set[str] = set()  # contract wallets that accept any signature
+        self.deployed: set[str] | None = None  # when set: calls to other addresses return empty data, like a chain
         self.multicall = True
         self.down = False
         self.status = 200
@@ -104,6 +105,8 @@ class FakeNode:
         return "0x" + self.call(to, data.removeprefix("0x"))
 
     def call(self, target: str, data: str) -> str:
+        if self.deployed is not None and target not in self.deployed:
+            return ""  # nothing lives there: the EVM returns empty data, not an error
         sel, args = data[:8], data[8:]
         if sel == SEL_BALANCE_OF:
             return word(self.balances.get(target, {}).get("0x" + args[24:64], 0))

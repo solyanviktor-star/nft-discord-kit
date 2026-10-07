@@ -1,7 +1,8 @@
 """python -m kit run | check
 
   run     start the Discord bot and the verification website (one long-running process)
-  check   validate config.toml and .env and print a summary; secrets are never printed
+  check   validate config.toml and .env, print a summary (secrets are never printed), and ask each
+          collection's RPC whether its contract exists (--offline skips that)
 
 The server builder is a separate command: python -m kit.setup --help
 """
@@ -55,20 +56,33 @@ def summary(s: Settings) -> str:
     ])
 
 
+async def contract_warnings(s: Settings) -> list[str]:
+    import aiohttp
+
+    from .reader import HoldingsReader
+    logging.getLogger("kit.evm").setLevel(logging.ERROR)  # the warnings below say it in one line each
+    async with aiohttp.ClientSession() as session:
+        return await HoldingsReader(s, session).contract_warnings()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m kit", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["run", "check"])
     parser.add_argument("--config", default=os.environ.get("KIT_CONFIG", "config.toml"), help="default: config.toml")
+    parser.add_argument("--offline", action="store_true", help="check: skip asking the RPCs about the contracts")
     args = parser.parse_args(argv)
     load_env_file(Path(".env"))
     try:
-        settings = load_settings(Path(args.config), require_runtime=args.command == "run")
+        settings = load_settings(Path(args.config), require_runtime=args.command == "run", strict=True)
     except ConfigError as e:
         print("Config problems:\n" + "\n".join(f"  - {p}" for p in e.problems), file=sys.stderr)
         return 1
     if args.command == "check":
         print(summary(settings))
+        if not args.offline:
+            for warning in asyncio.run(contract_warnings(settings)):
+                print(f"Warning: {warning}")
         return 0
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     import discord  # only `run` needs discord.py

@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
+# The example's placeholder and the zero address: `kit check` and `run` refuse them (an empty answer from
+# a non-contract must never be read as "everyone holds zero").
+PLACEHOLDER_CONTRACTS = frozenset({"0x1234567890abcdef1234567890abcdef12345678", "0x" + "0" * 40})
 EVM_ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 SOLANA_ADDRESS = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 BUILTIN_WALLET_KINDS = ("evm", "solana")
@@ -408,8 +411,9 @@ def _wallet_kinds(root: _Sec) -> dict[str, WalletKind]:
 
 
 def parse_settings(raw: Mapping[str, Any], env: Mapping[str, str], base_dir: Path | None = None,
-                   require_runtime: bool = False) -> Settings:
-    """Validate a parsed config.toml. `require_runtime` also demands what `run` needs (token, guild, URL)."""
+                   require_runtime: bool = False, strict: bool = False) -> Settings:
+    """Validate a parsed config.toml. `strict` (kit check, run) also refuses the example's placeholder
+    contract; `require_runtime` (run) also demands the token, the server id and the public URL."""
     problems: list[str] = []
     root = _Sec(dict(raw), "", problems)
     base_dir = base_dir or Path.cwd()
@@ -539,6 +543,14 @@ def parse_settings(raw: Mapping[str, Any], env: Mapping[str, str], base_dir: Pat
     client_secret = env.get("DISCORD_CLIENT_SECRET", "").strip()
     if (web_raffles or auto_join) and not client_secret:
         problems.append("web_raffles / oauth.auto_join need Discord OAuth: set DISCORD_CLIENT_SECRET in .env")
+    if 0 < len(env.get("SESSION_SECRET", "").strip()) < 32:
+        problems.append("SESSION_SECRET: use 32 or more random characters, or leave it empty to keep a generated one "
+                        "in data/ (a short one would be ignored and a new secret made on every deploy)")
+    if strict:
+        for i, c in enumerate(collections):
+            if c.contract in PLACEHOLDER_CONTRACTS:
+                problems.append(f"collections[{i}].contract: still the example placeholder; put {c.name}'s real "
+                                "contract address here")
     if require_runtime:
         if not token:
             problems.append("DISCORD_TOKEN is not set (put it in .env)")
@@ -557,7 +569,8 @@ def parse_settings(raw: Mapping[str, Any], env: Mapping[str, str], base_dir: Pat
                     client_secret=client_secret, env=dict(env))
 
 
-def load_settings(path: Path, env: Mapping[str, str] | None = None, require_runtime: bool = False) -> Settings:
+def load_settings(path: Path, env: Mapping[str, str] | None = None, require_runtime: bool = False,
+                  strict: bool = False) -> Settings:
     """Read and validate a config file; raises ConfigError with every problem."""
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -565,7 +578,7 @@ def load_settings(path: Path, env: Mapping[str, str] | None = None, require_runt
         raise ConfigError([f"{path}: not found (copy config.example.toml to config.toml)"]) from None
     except tomllib.TOMLDecodeError as e:
         raise ConfigError([f"{path}: {e}"]) from None
-    return parse_settings(raw, os.environ if env is None else env, path.parent, require_runtime)
+    return parse_settings(raw, os.environ if env is None else env, path.parent, require_runtime, strict)
 
 
 def read_env_file(path: Path) -> dict[str, str]:

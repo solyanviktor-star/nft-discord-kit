@@ -56,19 +56,25 @@ class HoldingsReader:
                 failed |= {uid for uid, ws in evm_w.items() if ws}
                 continue
             owner_of = {a.lower(): uid for uid, ws in evm_w.items() for a in ws}
+            unknown: set[str] = set()  # special sets this round could not read
+            # Empty return data ("0x") means nothing answered at that address on this chain: a wrong
+            # contract, or an RPC of another chain. That is "unknown", never "holds zero".
             for (what, key, name), data in zip(slots, results, strict=True):
                 if what == "count":
-                    if data is None:  # balanceOf reverted: this user's total cannot be trusted
+                    if not data:  # reverted or empty: this user's total cannot be trusted
                         failed.add(key)
                     else:
                         counts[key][name] = counts[key].get(name, 0) + evm.as_int(data)
-                elif what == "owner":  # ownerOf: None means burned or never minted
-                    uid = owner_of.get("0x" + data[-40:].lower()) if data and len(data) >= 40 else None
-                    if uid:
+                elif what == "owner":  # ownerOf: a revert (None) means burned or never minted
+                    if data == "":
+                        unknown.add(name)
+                    elif data and len(data) >= 40 and (uid := owner_of.get("0x" + data[-40:].lower())):
                         specials[uid][name] = specials[uid].get(name, 0) + 1
                 elif data:  # ERC-1155 special: balanceOf(wallet, id)
                     specials[key][name] = specials[key].get(name, 0) + evm.as_int(data)
-            known |= {sp.name for sp in group_specials}
+                else:
+                    unknown.add(name)
+            known |= {sp.name for sp in group_specials} - unknown
 
         await self._read_solana(wallets, counts, failed)
         now = int(time.time())
@@ -126,6 +132,25 @@ class HoldingsReader:
                         continue
                     for c in group:
                         counts[uid][c.name] = counts[uid].get(c.name, 0) + held.get(c.contract, 0)
+
+    async def contract_warnings(self) -> list[str]:
+        """For `kit check`: EVM collections with no code at their contract on their RPC (a wrong address, or
+        an RPC of another chain), and RPCs that do not answer. Names env vars only: RPC URLs hold keys."""
+        out = []
+        for c in self.s.collections:
+            if not c.is_evm:
+                continue
+            urls = self.s.rpc_urls(c.rpc_env)
+            if not urls:
+                out.append(f"{c.name}: {c.rpc_env} is not set in .env, so holdings cannot be read")
+                continue
+            try:
+                if not await evm.Rpc(self.session, urls, tries=1, timeout=10).has_code(c.contract):
+                    out.append(f"{c.name}: nothing is deployed at {c.contract} on the {c.rpc_env} chain (a wrong "
+                               "address, or an RPC of another chain); every reading would stay unknown")
+            except (evm.RpcError, evm.Reverted):
+                out.append(f"{c.name}: the {c.rpc_env} RPC did not answer, so the contract was not checked")
+        return out
 
     async def contract_signature_ok(self, address: str, message: str, signature: bytes) -> bool:
         """EIP-1271: ask a contract wallet (on any configured EVM chain where it has code) to vouch."""

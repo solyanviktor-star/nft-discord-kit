@@ -77,6 +77,39 @@ async def test_falls_back_to_plain_eth_call_without_multicall(node):
     assert node.requests.count("eth_call") > 1
 
 
+@pytest.mark.parametrize("multicall", [True, False])
+async def test_empty_answers_from_a_wrong_contract_are_unknown(node, multicall):
+    """A placeholder or wrong-chain contract answers balanceOf with empty data; that must not read as 0."""
+    node.multicall = multicall
+    node.deployed = {EDITIONS}  # nothing at COLLECTION on this chain
+    node.balances_1155[EDITIONS] = {(ALICE, 1): 2}
+    h = await read(chain_settings(node.url), {"u1": [("evm", ALICE)], "u2": []})
+    assert not h["u1"].complete  # roles are left alone this round instead of being stripped
+    assert "Legendary" not in h["u1"].specials_known  # its ownerOf calls came back empty too
+    assert h["u2"].complete
+
+
+async def test_contract_check_for_kit_check(node, aiohttp_server):
+    from aiohttp import web
+    node.code[COLLECTION] = "0x6080"  # only the ERC-721 contract exists on this RPC
+    s = chain_settings(node.url, collections=[
+        {"name": "Genesis", "chain": "ethereum", "rpc_env": "RPC_TEST", "contract": COLLECTION, "standard": "erc721"},
+        {"name": "Editions", "chain": "ethereum", "rpc_env": "RPC_TEST", "contract": EDITIONS, "standard": "erc1155",
+         "token_ids": [1]},
+        {"name": "Elsewhere", "chain": "base", "rpc_env": "RPC_BASE", "contract": CAROL, "standard": "erc721"}])
+    async with aiohttp.ClientSession() as session:
+        warnings = await HoldingsReader(s, session).contract_warnings()
+    assert len(warnings) == 2
+    assert warnings[0].startswith(f"Editions: nothing is deployed at {EDITIONS} on the RPC_TEST chain")
+    assert warnings[1] == "Elsewhere: RPC_BASE is not set in .env, so holdings cannot be read"
+    dead = await aiohttp_server(web.Application())
+    s = chain_settings(str(dead.make_url("/")))
+    async with aiohttp.ClientSession() as session:
+        warnings = await HoldingsReader(s, session).contract_warnings()
+    assert warnings[0] == "Genesis: the RPC_TEST RPC did not answer, so the contract was not checked"
+    assert all(str(dead.make_url("/")) not in w for w in warnings)  # env names only, never URLs
+
+
 async def test_dead_node_means_unknown_not_zero(node):
     node.down, node.status = True, 429
     h = await read(chain_settings(node.url), {"u1": [("evm", ALICE)], "u2": []})

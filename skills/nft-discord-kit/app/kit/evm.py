@@ -157,7 +157,8 @@ async def _plain_call(rpc: Rpc, call: Call, gate: asyncio.Semaphore) -> str | No
 async def batch_call(rpc: Rpc, calls: Sequence[Call], multicall: str, chunk: int = 100) -> list[str | None]:
     """Run read-only calls; returns each call's return data (hex, no 0x), None where it reverted.
 
-    Raises RpcError when the node is down: the caller must treat that as "unknown", never as "zero".
+    "" (empty return data) means no contract answered at that address on this chain. Raises RpcError
+    when the node is down. Callers must treat all three cases as "unknown", never as "zero".
     """
     out: list[str | None] = []
     gate = asyncio.Semaphore(8)
@@ -175,6 +176,6 @@ async def batch_call(rpc: Rpc, calls: Sequence[Call], multicall: str, chunk: int
     return out
 
 
-def as_int(data: str | None) -> int:
-    """A uint256 return value; empty data counts as 0."""
-    return int(data[:64], 16) if data else 0
+def as_int(data: str) -> int:
+    """A uint256 return value (its first word). Never call it on empty data: that is "unknown"."""
+    return int(data[:64], 16)

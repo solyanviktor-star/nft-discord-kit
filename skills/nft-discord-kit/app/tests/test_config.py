@@ -11,6 +11,8 @@ import pytest
 from conftest import APP, BASE_CONFIG, ENV, b58encode, make_settings, merge
 from kit.config import ConfigError, load_settings, parse_settings, read_env_file, session_secret
 
+PLACEHOLDER = "0x1234567890abcdef1234567890abcdef12345678"
+
 
 def problems(raw, env=None, **kw):
     with pytest.raises(ConfigError) as err:
@@ -91,17 +93,32 @@ def test_env_file_and_session_secret(tmp_path):
     assert session_secret({"SESSION_SECRET": "x" * 40}, tmp_path / "data") == b"x" * 40
 
 
-def test_check_command_never_prints_secrets(tmp_path):
-    config = tomllib.loads((APP / "config.example.toml").read_text(encoding="utf-8"))
-    assert config["project"]["name"] == "Your Project"
-    (tmp_path / "config.toml").write_text((APP / "config.example.toml").read_text(encoding="utf-8"), encoding="utf-8")
-    (tmp_path / ".env").write_text("DISCORD_TOKEN=super-secret-token\nRPC_ETHEREUM=https://key-in-url.example.com/abc\n",
-                                   encoding="utf-8")
-    env = {k: v for k, v in os.environ.items() if k not in ("DISCORD_TOKEN", "RPC_ETHEREUM", "PUBLIC_URL")}
+def check(tmp_path, config: str, dotenv: str):
+    (tmp_path / "config.toml").write_text(config, encoding="utf-8")
+    (tmp_path / ".env").write_text(dotenv, encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k not in ("DISCORD_TOKEN", "RPC_ETHEREUM", "PUBLIC_URL",
+                                                            "SESSION_SECRET")}
     env["PYTHONPATH"] = str(APP)
-    out = subprocess.run([sys.executable, "-m", "kit", "check"], cwd=tmp_path, capture_output=True, text=True,
-                         env=env, timeout=60)
+    return subprocess.run([sys.executable, "-m", "kit", "check", "--offline"], cwd=tmp_path, capture_output=True,
+                          text=True, env=env, timeout=60)
+
+
+def test_check_command_never_prints_secrets(tmp_path):
+    example = (APP / "config.example.toml").read_text(encoding="utf-8")
+    assert tomllib.loads(example)["project"]["name"] == "Your Project"
+    real = example.replace(PLACEHOLDER, "0x" + "ab" * 20)
+    out = check(tmp_path, real, "DISCORD_TOKEN=super-secret-token\nRPC_ETHEREUM=https://key-in-url.example.com/abc\n")
     assert out.returncode == 0, out.stderr
     assert "bot token set" in out.stdout and "RPC_ETHEREUM (1 URL)" in out.stdout
     assert "super-secret-token" not in out.stdout + out.stderr and "key-in-url" not in out.stdout + out.stderr
     assert "Ready to run: not yet, missing discord.guild_id" in out.stdout
+
+
+def test_check_refuses_the_placeholder_contract_and_a_short_session_secret(tmp_path):
+    example = (APP / "config.example.toml").read_text(encoding="utf-8")
+    out = check(tmp_path, example, "DISCORD_TOKEN=x\nSESSION_SECRET=too-short\n")
+    assert out.returncode == 1
+    assert "collections[0].contract: still the example placeholder" in out.stderr
+    assert "SESSION_SECRET: use 32 or more" in out.stderr and "too-short" not in out.stderr
+    s = load_settings(APP / "config.example.toml", {})  # the setup commands still accept it
+    assert s.collections[0].contract == PLACEHOLDER
