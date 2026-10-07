@@ -46,6 +46,8 @@ async def run(s: Settings, data_dir: Path) -> None:
         finally:
             stop_task.cancel()
             await bot.close()
+            with contextlib.suppress(Exception, asyncio.CancelledError):
+                await bot_task  # let the gateway task finish; its own error, if any, was raised above
             await runner.cleanup()
             store.close()
             log.info("stopped")
