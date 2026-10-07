@@ -21,3 +21,4 @@ skills/nft-discord-kit/app/config.toml
 .vscode/
 .DS_Store
 Thumbs.db
+.ruff_cache/

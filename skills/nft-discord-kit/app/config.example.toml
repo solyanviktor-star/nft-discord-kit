@@ -1,0 +1,141 @@
+# nft-discord-kit configuration. Copy to config.toml and edit.
+# Secrets never go here: they live in .env (see .env.example).
+# Check your edits with:  python -m kit check
+
+[project]
+name = "Your Project"
+color = "#5865F2"                    # accent colour of embeds and the verification site
+logo_url = ""                        # optional https:// image shown on the site
+public_url = "https://verify.example.com"   # where the site is served (the PUBLIC_URL env var wins)
+
+[discord]
+guild_id = 0                         # your server id: run `python -m kit.setup guilds`
+application_id = 0                   # optional; read from the bot token when 0
+staff_roles = ["Team", "Mod"]        # role names (prefixes) that count as staff: every team command
+raffle_manager_roles = ["Raffle Manager"]   # these roles run raffle commands only
+raffle_users = []                    # Discord user ids allowed to run raffle commands only, e.g. ["123"]
+
+# Channels the bot uses: a channel name (emoji prefixes are ignored) or a numeric id.
+# Names must match the template if you rename channels there.
+[channels]
+verify = "verify"
+giveaways = "giveaways"
+winners = "giveaways-winners"
+tickets = "tickets"
+ticket_log = "ticket-log"
+self_roles = "claim-roles"
+
+[web]
+host = ""                            # "" = all interfaces (Docker, PaaS); "localhost" behind a local proxy
+port = 8080                          # the PORT env var wins (Railway, Render, Fly.io set it)
+trust_proxy = true                   # read the client IP from X-Forwarded-For (behind Caddy / a PaaS proxy)
+rate_limit_per_minute = 30           # per IP, on /api and /auth
+
+[verification]
+sync_minutes = 30                    # re-check every linked member this often
+chain_id = 1                         # the Chain ID printed in the sign-in message
+solana = false                       # also link Solana wallets (Phantom, Solflare, Backpack)
+
+# One entry per NFT collection. Holdings add up across collections for the tiers.
+[[collections]]
+name = "Your Collection"
+chain = "ethereum"                   # any name; it picks the RPC env var below
+rpc_env = "RPC_ETHEREUM"             # env var with one or more RPC URLs (comma separated, fallback order)
+contract = "0x1234567890abcdef1234567890abcdef12345678"   # placeholder: put 0xYourContract here
+standard = "erc721"                  # "erc721", "erc1155" (list token_ids) or "solana" (needs [verification] solana)
+# token_ids = [1, 2, 3]              # erc1155 only: the ids that count
+# role = "Genesis Holder"            # optional role for anyone holding this collection
+# multicall = ""                     # "" if the chain has no Multicall3 (plain eth_call is used then)
+
+# [[collections]]                    # a Solana collection, read through a DAS-capable RPC
+# name = "Your Solana Collection"
+# standard = "solana"
+# rpc_env = "RPC_SOLANA"
+# contract = "YourVerifiedCollectionAddressBase58"
+
+# Tiers by total NFTs held. Roles stack: 10 NFTs wear all three.
+[[tiers]]
+name = "Holder"
+min = 1
+
+[[tiers]]
+name = "Collector"
+min = 3
+
+[[tiers]]
+name = "Whale"
+min = 10
+
+# Optional special token sets (1/1s, rarity tiers): a role and bonus raffle tickets.
+# If the chain does not answer for them in a round, their roles are left alone.
+# [[special]]
+# name = "1/1"
+# role = "1/1"
+# collection = "Your Collection"     # an EVM collection above (erc721: ownerOf; erc1155: balanceOf per id)
+# token_ids = [7, 42, 99]            # or token_file = "one-of-ones.txt" (ids separated by spaces, commas, lines)
+# bonus_tickets = 3
+
+[raffles]
+require_holding = true               # false: linked members without NFTs may enter with 1 ticket
+tickets_per_token = 1
+ticket_cap = 10                      # NFTs counted per account (ten NFTs in one account = ten split over ten)
+special_bonus = "best"               # "best": the best special bonus; "sum": every special held adds up
+alert_role = "Giveaway Alerts"       # tagged on every new raffle card ("" = no tag)
+eligible_roles = []                  # default eligible roles for new raffles; [] = every holder role
+
+# The chains offered in /nft raffle create. wallet_kind decides which wallet entrants give:
+#   evm     the last verified wallet, or an address set with "Set Raffle Wallet" (a burner is fine)
+#   solana  typed in a modal, or the verified Solana wallet
+#   <id>    a custom kind from [[wallet_kinds]]
+[[raffle_chains]]
+name = "Ethereum"
+wallet_kind = "evm"
+
+[[raffle_chains]]
+name = "Base"
+wallet_kind = "evm"
+
+[[raffle_chains]]
+name = "Solana"
+wallet_kind = "solana"
+
+# Custom wallet kinds: one or more fields, each checked with a regular expression.
+# Example: Bitcoin Ordinals prizes need a taproot address for the inscription and a payment address.
+# [[wallet_kinds]]
+# id = "ordinals"
+# label = "Bitcoin"
+# fields = [
+#   { key = "taproot", label = "Taproot address (bc1p...)", pattern = "^bc1p[02-9ac-hj-np-z]{58}$", placeholder = "bc1p..." },
+#   { key = "payment", label = "Payment address", pattern = "^(bc1|[13])[02-9A-HJ-NP-Za-km-z]{25,62}$", placeholder = "bc1q..." },
+# ]
+# [[raffle_chains]]
+# name = "Bitcoin"
+# wallet_kind = "ordinals"
+
+[support]
+enabled = true
+# staff_roles = ["Team", "Mod"]      # who sees and closes tickets; default: discord.staff_roles
+max_open = 1                         # open tickets per person
+archive_hours = 72                   # Discord archives an idle ticket thread after this (1h, 24h, 3d or 7d)
+greeting = "Thanks! Describe your question below — the team will reply as soon as possible."
+categories = [
+  { emoji = "🎁", name = "Prize" },
+  { emoji = "🛠", name = "Support" },
+  { emoji = "🤝", name = "Partnership" },
+  { emoji = "❓", name = "Other" },
+]
+
+[self_roles]
+enabled = true
+roles = [
+  { name = "Giveaway Alerts", emoji = "🔔", description = "get pinged when a new giveaway starts" },
+]
+
+[oauth]
+# The website login ("Verify with Discord" on /) turns on when DISCORD_CLIENT_SECRET is set.
+auto_join = false                    # also ask for guilds.join and add verified people to the server
+
+[web_raffles]
+# Optional last stage: enter raffles from your website. Needs the Discord login (OAuth) above.
+enabled = false
+recent_days = 7                      # how long ended raffles stay listed

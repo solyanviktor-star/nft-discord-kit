@@ -10,7 +10,7 @@ from typing import Mapping, Sequence
 import aiohttp
 
 from . import evm, solana
-from .config import Collection, Settings
+from .config import Collection, Settings, Special
 from .holdings import Holdings
 from .signatures import eip191_hash, is_magic, is_valid_signature_call
 
@@ -56,7 +56,7 @@ class HoldingsReader:
                 failed |= {uid for uid, ws in evm_w.items() if ws}
                 continue
             owner_of = {a.lower(): uid for uid, ws in evm_w.items() for a in ws}
-            for (what, key, name), data in zip(slots, results):
+            for (what, key, name), data in zip(slots, results, strict=True):
                 if what == "count":
                     if data is None:  # balanceOf reverted: this user's total cannot be trusted
                         failed.add(key)
@@ -79,7 +79,9 @@ class HoldingsReader:
                 for uid in wallets}
 
     @staticmethod
-    def _evm_calls(cols: Sequence[Collection], specials: Sequence, evm_w: Mapping[str, list[str]]):
+    def _evm_calls(cols: Sequence[Collection], specials: Sequence[Special], evm_w: Mapping[str, list[str]]
+                   ) -> tuple[list[evm.Call], list[tuple[str, str, str]]]:
+        """Every read for one RPC endpoint, plus a slot per call saying what its answer means."""
         calls: list[evm.Call] = []
         slots: list[tuple[str, str, str]] = []  # (what, user id or special name, collection or special name)
         for col in cols:

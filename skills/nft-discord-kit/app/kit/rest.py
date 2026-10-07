@@ -18,12 +18,17 @@ class DiscordError(Exception):
 
 
 class Rest:
-    def __init__(self, session: aiohttp.ClientSession, token: str):
-        self.session = session
+    def __init__(self, session: aiohttp.ClientSession, token: str, read_only: bool = False):
+        self.session, self.read_only = session, read_only
         self._headers = {"Authorization": f"Bot {token}", "User-Agent": USER_AGENT}
 
     async def request(self, method: str, path: str, body: Any = None, reason: str = "") -> Any:
-        """Call the API; waits out 429 rate limits; raises DiscordError on other errors."""
+        """Call the API; waits out 429 rate limits; raises DiscordError on other errors.
+
+        A read-only client refuses anything but GET before it reaches the network.
+        """
+        if self.read_only and method.upper() != "GET":
+            raise PermissionError(f"read-only Discord client: refusing {method} {path}")
         headers = dict(self._headers)
         if reason:
             headers["X-Audit-Log-Reason"] = quote(reason)

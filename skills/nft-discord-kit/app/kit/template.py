@@ -274,7 +274,7 @@ def plan(t: Template, s: Settings, state: Mapping[str, Any]) -> Plan:
                 actions.append(Action("create_channel", ch.name, {"type": kind, "type_name": ch.type, "topic": ch.topic,
                                                                   "overwrites": list(over.items())}, cat.name))
                 continue
-            if found and str(found_ch.get("parent_id")) != str(found["id"]):
+            if found is None or str(found_ch.get("parent_id")) != str(found["id"]):
                 notes.append(f"#{found_ch['name']} already exists outside {cat.name!r}; it stays where it is.")
             if add := missing(over, found_ch.get("permission_overwrites", [])):
                 actions.append(Action("add_overwrites", found_ch["name"], {"id": str(found_ch["id"]), "overwrites": add}))

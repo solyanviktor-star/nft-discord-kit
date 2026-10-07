@@ -504,7 +504,7 @@ def parse_settings(raw: Mapping[str, Any], env: Mapping[str, str], base_dir: Pat
                 TicketCategory("\U0001F91D", "Partnership"), TicketCategory("❓", "Other")]
     support = SupportSettings(sp.get("enabled", True, bool), sp.strs("staff_roles", discord.staff_roles), tuple(cats),
                               sp.get("max_open", 1, int), sp.get("archive_hours", 72, int),
-                              sp.get("greeting", "Thanks! Describe your question below. The team will reply "
+                              sp.get("greeting", "Thanks! Describe your question below — the team will reply "
                                                  "as soon as possible.", str))
     if not 1 <= len(cats) <= 5 or len({x.name.casefold() for x in cats}) != len(cats):
         sp.bad("categories", "expected 1 to 5 categories with different names")

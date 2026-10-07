@@ -1,0 +1,6 @@
+# HTTPS in front of the kit. Caddy gets and renews the certificate by itself.
+# Docker Compose sets DOMAIN and UPSTREAM; on a plain server edit the defaults below.
+{$DOMAIN:verify.example.com} {
+	encode gzip
+	reverse_proxy {$UPSTREAM:localhost:8080}
+}

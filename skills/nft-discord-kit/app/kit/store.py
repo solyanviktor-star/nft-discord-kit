@@ -123,6 +123,11 @@ class Store:
         rows = self.db.execute(sql + " ORDER BY created DESC LIMIT ?", (*args, limit))
         return [Raffle.from_dict(json.loads(r["data"])) for r in rows]
 
+    def delete_raffle(self, raffle_id: str) -> None:
+        """Only for a raffle whose card could not be posted (nobody saw it)."""
+        self.db.execute("DELETE FROM entries WHERE raffle_id=?", (raffle_id,))
+        self.db.execute("DELETE FROM raffles WHERE id=?", (raffle_id,))
+
     def raffle_ids(self) -> list[str]:
         return [r["id"] for r in self.db.execute("SELECT id FROM raffles")]
 
@@ -139,6 +144,9 @@ class Store:
         """In entry order."""
         rows = self.db.execute("SELECT * FROM entries WHERE raffle_id=? ORDER BY at, rowid", (raffle_id,))
         return [_entry(r) for r in rows]
+
+    def entry_count(self, raffle_id: str) -> int:
+        return int(self.db.execute("SELECT COUNT(*) FROM entries WHERE raffle_id=?", (raffle_id,)).fetchone()[0])
 
     def entry_counts(self) -> dict[str, int]:
         rows = self.db.execute("SELECT raffle_id, COUNT(*) AS n FROM entries GROUP BY raffle_id")

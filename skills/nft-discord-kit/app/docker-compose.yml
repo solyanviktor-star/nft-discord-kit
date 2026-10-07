@@ -1,0 +1,35 @@
+# docker compose up -d --build                  the bot + website (port 8080 inside the network)
+# DOMAIN=verify.example.com docker compose --profile https up -d --build
+#                                               ... plus Caddy with automatic HTTPS on ports 80/443
+services:
+  kit:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - kit-data:/data
+    expose:
+      - "8080"
+    # Without the Caddy profile, publish the port to put your own proxy in front:
+    # ports:
+    #   - "8080:8080"
+
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on: [kit]
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN to your verification domain}
+      UPSTREAM: kit:8080
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  kit-data:
+  caddy-data:

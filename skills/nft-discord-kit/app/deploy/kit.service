@@ -1,0 +1,24 @@
+# systemd unit for a VPS without Docker. Install:
+#   sudo cp deploy/kit.service /etc/systemd/system/nft-discord-kit.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now nft-discord-kit
+# Assumes the app in /opt/nft-discord-kit with a venv in .venv and a user "kit" that owns data/.
+[Unit]
+Description=nft-discord-kit (Discord bot + verification website)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kit
+WorkingDirectory=/opt/nft-discord-kit
+EnvironmentFile=/opt/nft-discord-kit/.env
+ExecStart=/opt/nft-discord-kit/.venv/bin/python -m kit run
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/nft-discord-kit/data
+
+[Install]
+WantedBy=multi-user.target

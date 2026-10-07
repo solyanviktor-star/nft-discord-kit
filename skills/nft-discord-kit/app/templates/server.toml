@@ -1,0 +1,146 @@
+# Server layout for `python -m kit.setup plan` (read-only) and `python -m kit.setup build`.
+#
+# Edit names and emojis freely. The builder matches existing roles, categories and channels by name
+# (ignoring case and any emoji or separator in front), creates only what is missing, and never
+# deletes, renames or moves anything.
+#
+# Holder tier roles, collection roles, special roles, self-roles and the giveaway alert role come
+# from config.toml, so the bot and the server always use the same names.
+#
+# Access presets (per category, a channel may override with its own `access`):
+#   public            everyone sees and writes
+#   public_readonly   everyone sees; only staff and the bot write
+#   holders           only holders (the lowest tier role) and staff see and write
+#   holders_readonly  holders see; only staff and the bot write
+#   staff             only staff roles and the bot
+# Channel options: type = "text" | "voice"; topic; roles = [...] (who counts as a holder in this
+# channel, e.g. ["Whale"] for a whale lounge); bot = [...] (extra permissions for the bot);
+# allow_threads = true (members may write inside private threads they are added to: ticket threads).
+#
+# If you rename a channel the bot uses, update [channels] in config.toml to match.
+
+[guild]
+verification_level = "low"                 # none, low, medium, high, very_high
+default_notifications = "only_mentions"    # all_messages, only_mentions
+explicit_content_filter = "all_members"    # disabled, members_without_roles, all_members
+
+# Staff roles, top to bottom. access = "staff" sees everything; "holders" sees the holder channels.
+[[roles]]
+name = "Team"
+color = "#E74C3C"
+hoist = true
+access = "staff"
+permissions = ["administrator"]
+
+[[roles]]
+name = "Mod"
+color = "#E67E22"
+hoist = true
+access = "staff"
+permissions = ["manage_messages", "manage_threads", "kick_members", "ban_members", "moderate_members"]
+
+[[roles]]
+name = "Raffle Manager"
+color = "#9B59B6"
+hoist = true
+access = "holders"
+
+[[roles]]
+name = "Collab Manager"
+color = "#3498DB"
+hoist = true
+access = "holders"
+permissions = ["mention_everyone"]
+
+[[categories]]
+name = "✅ Verification"
+access = "public_readonly"
+
+  [[categories.channels]]
+  name = "✅┃verify"
+  topic = "Press Verify to link your wallet and get your holder roles."
+
+[[categories]]
+name = "📌 Important"
+access = "holders_readonly"
+
+  [[categories.channels]]
+  name = "📢┃announcements"
+
+  [[categories.channels]]
+  name = "🔗┃official-links"
+
+[[categories]]
+name = "🎁 Giveaways"
+access = "holders_readonly"
+
+  [[categories.channels]]
+  name = "🎁┃giveaways"
+  bot = ["mention_everyone"]   # lets the bot tag the Giveaway Alerts role on new raffle cards
+
+  [[categories.channels]]
+  name = "🏆┃giveaways-winners"
+
+[[categories]]
+name = "💎 Holders"
+access = "holders"
+
+  [[categories.channels]]
+  name = "💬┃holder-chat"
+
+  [[categories.channels]]
+  name = "🔥┃alpha-chat"
+
+  [[categories.channels]]
+  name = "🎙┃stage"
+  type = "voice"
+
+[[categories]]
+name = "🎨 Community"
+access = "holders"
+
+  [[categories.channels]]
+  name = "🖌┃community-art"
+
+  [[categories.channels]]
+  name = "😂┃memes"
+
+  [[categories.channels]]
+  name = "🐦┃raids"
+
+  [[categories.channels]]
+  name = "💰┃share-your-profit"
+
+[[categories]]
+name = "🛠 Product"
+access = "holders"
+
+  [[categories.channels]]
+  name = "🛠┃development-updates"
+  access = "holders_readonly"
+
+  [[categories.channels]]
+  name = "💡┃suggestions"
+
+[[categories]]
+name = "🔔 Notifications"
+access = "holders_readonly"
+
+  [[categories.channels]]
+  name = "🎭┃claim-roles"
+
+[[categories]]
+name = "📬 Tickets"
+access = "holders_readonly"
+
+  [[categories.channels]]
+  name = "📩┃tickets"
+  allow_threads = true
+  bot = ["create_private_threads", "manage_threads", "send_messages_in_threads", "mention_everyone"]
+
+[[categories]]
+name = "🔒 Team"
+access = "staff"
+
+  [[categories.channels]]
+  name = "📋┃ticket-log"

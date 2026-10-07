@@ -64,32 +64,34 @@ def role_changes(h: Holdings, s: Settings, have: set[str]) -> tuple[set[str], se
 
 
 def ticket_count(h: Holdings | None, s: Settings) -> tuple[int, list[str]]:
-    """Raffle tickets: tickets_per_token x min(total, cap) + the special bonus ("best" one or the "sum").
+    """(tickets, labels) for a reading: tickets_per_token x min(total, cap) + the special bonus.
 
-    Returns (tickets, labels explaining the number), (0, []) when nothing is held.
+    The bonus is the best special set held ("best") or every special set held ("sum"); 0 tickets
+    when nothing is held. Ten NFTs split over ten accounts must not beat ten NFTs in one, hence
+    the cap per account.
     """
     if h is None or h.total <= 0:
         return 0, []
     r = s.raffles
-    total = h.total
-    labels = [f"{total} NFT{'' if total == 1 else 's'}" + (f" (counted up to {r.ticket_cap})" if total > r.ticket_cap
-                                                         else "")]
+    n = h.total
+    labels = [f"{n} NFT{'' if n == 1 else 's'}" + (f" (max {r.ticket_cap})" if n > r.ticket_cap else "")]
     bonuses = [(sp.name, sp.bonus_tickets) for sp in s.specials if sp.bonus_tickets and h.specials.get(sp.name, 0) > 0]
     if bonuses and r.special_bonus == "best":
         bonuses = [max(bonuses, key=lambda b: b[1])]
-    labels += [f"{name} +{n}" for name, n in bonuses]
-    return min(total, r.ticket_cap) * r.tickets_per_token + sum(n for _, n in bonuses), labels
+    labels += [f"{name} +{bonus}" for name, bonus in bonuses]
+    return min(n, r.ticket_cap) * r.tickets_per_token + sum(b for _, b in bonuses), labels
 
 
-def tickets_rule(s: Settings) -> str:
-    """One paragraph explaining how tickets are counted (shown on raffle cards)."""
+def tickets_rule(s: Settings, labels: Mapping[str, str] | None = None) -> str:
+    """How tickets are counted, for the raffle card. `labels` may map a special set to its role mention."""
     r = s.raffles
-    per = f"{r.tickets_per_token} ticket{'' if r.tickets_per_token == 1 else 's'}"
-    text = f"{per} per NFT in your linked wallets, up to {r.tickets_per_token * r.ticket_cap}."
-    bonus = [f"{sp.name} +{sp.bonus_tickets}" for sp in s.specials if sp.bonus_tickets]
+    per = r.tickets_per_token
+    text = (f"{per} ticket{'' if per == 1 else 's'} per {s.project.name} NFT in your linked wallets, "
+            f"up to {r.ticket_cap * per}")
+    bonus = [f"{(labels or {}).get(sp.name, sp.name)} +{sp.bonus_tickets}" for sp in s.specials if sp.bonus_tickets]
     if bonus:
-        text += ("\nBonus (the best one): " if r.special_bonus == "best" else "\nBonus (all that apply): ")
-        text += " / ".join(bonus)
+        text += ("\nSpecial bonus (the best one): " if r.special_bonus == "best"
+                 else "\nSpecial bonus (each one held): ") + " / ".join(bonus)
     if not r.require_holding:
         text += "\nNo NFT needed to enter: everyone gets at least 1 ticket."
     return text
