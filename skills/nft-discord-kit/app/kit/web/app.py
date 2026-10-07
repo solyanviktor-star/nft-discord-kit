@@ -95,6 +95,7 @@ class Site:
         app = web.Application(middlewares=[self.guard], client_max_size=64 * 1024)
         add_get, add_post = app.router.add_get, app.router.add_post
         add_get("/healthz", self.healthz)
+        add_get("/favicon.ico", self.no_icon)
         add_get("/", self.page_handler("index.html"))
         add_get("/verify", self.page_handler("verify.html"))
         add_get("/theme.css", self.theme)
@@ -162,6 +163,10 @@ class Site:
             return web.Response(text=text, content_type="text/html")
         return handler
 
+    async def no_icon(self, request: web.Request) -> web.Response:
+        """Browsers ask for /favicon.ico on every page; answer without a 404 in the console."""
+        return web.Response(status=204)
+
     async def healthz(self, request: web.Request) -> web.Response:
         return web.json_response({"ok": True, "discord": self.ready()})
 
@@ -185,15 +190,15 @@ class Site:
             try:
                 p = statetoken.verify(statetoken.VERIFY, str(state), self.kit.secret)
             except statetoken.TokenError as e:
-                raise Fail(400, "This link has expired. Press Verify in Discord to get a new one." if str(e) == "expired"
-                           else "This link is not valid. Press Verify in Discord to get a new one.") from None
+                raise Fail(400, "Link expired — press Verify in Discord again." if str(e) == "expired"
+                           else "This link is not valid — press Verify in Discord again.") from None
             if p.get("g") and p["g"] != str(self.s.discord.guild_id):
                 raise Fail(400, "This link belongs to another server.")
             return str(p["u"]), str(p.get("n", ""))
         who = self.session(request)
         if who:
             return who
-        raise Fail(401, "Open this page from the Verify button in Discord"
+        raise Fail(401, "Open this page from the Link Wallet button in Discord"
                    + (", or log in with Discord." if self.s.oauth_enabled else "."))
 
     def wallets(self, user_id: str) -> list[dict[str, Any]]:

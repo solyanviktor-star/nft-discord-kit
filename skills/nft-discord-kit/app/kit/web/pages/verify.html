@@ -12,7 +12,7 @@
 <main class="card">
   <header class="brand">{{logo}}<span>{{project}}</span></header>
   <h1 id="title">Link your wallet to Discord</h1>
-  <p id="lead">Connect the wallet that holds your NFTs and sign one message. Your holder roles follow within seconds.</p>
+  <p id="lead">Connect the wallet that holds your {{project}} NFTs and sign once. The bot uses it for your holder roles and raffle entries &mdash; no re-verification needed.</p>
   <p id="who" class="pill" hidden>Discord: <b id="who-name"></b></p>
 
   <section id="connect" hidden>
@@ -30,7 +30,7 @@
   <section id="mobile" class="group" hidden>
     <p id="mobile-text"></p>
     <div id="mobile-list" class="buttons"></div>
-    <button id="copy" class="btn" type="button">Copy this page's link</button>
+    <button id="copy" class="btn" type="button">Copy link (paste into your wallet browser)</button>
   </section>
 
   <a id="login" class="btn primary" href="/auth/discord?next=/verify" hidden>Log in with Discord</a>
@@ -43,9 +43,9 @@
   </section>
 
   <footer class="foot">
-    Signing is free: it is a message, not a transaction, and it cannot move your NFTs.
-    A wallet belongs to one Discord account at a time; signing from another account moves it there.
-    Unlink wallets in Discord under <b>My Wallets</b>.
+    Signing is a free message, not a transaction. Only this site ever sees it. After linking you can close
+    this tab and go back to Discord. A wallet belongs to one Discord account at a time: signing it from
+    another account moves it there. Unlink wallets in Discord under <b>My Wallets</b>.
   </footer>
 </main>
 <script src="/static/verify.js"></script>

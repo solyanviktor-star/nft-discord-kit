@@ -113,10 +113,10 @@ async def test_bad_and_expired_links(aiohttp_client, tmp_path, reader):
     old = statetoken.sign(statetoken.VERIFY, {"u": "3002", "n": "newbie", "g": "1000"}, w.kit.secret, 60,
                           now=time.time() - 3600)
     r = await client.get("/api/me", params={"state": old})
-    assert r.status == 400 and (await r.json())["error"].startswith("This link has expired.")
+    assert r.status == 400 and (await r.json())["error"] == "Link expired — press Verify in Discord again."
     good = state_for(w, w.newbie)
     r = await client.get("/api/me", params={"state": good[:-1] + ("0" if good[-1] != "0" else "1")})
-    assert (await r.json())["error"].startswith("This link is not valid.")
+    assert (await r.json())["error"].startswith("This link is not valid")
     r = await client.get("/api/me")
     assert r.status == 401
     other_guild = statetoken.sign(statetoken.VERIFY, {"u": "3002", "n": "x", "g": "999"}, w.kit.secret, 60)
