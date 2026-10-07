@@ -15,11 +15,14 @@ will own the bot. The agent cannot click for them; read the steps out one at a t
    (the person pastes it themselves; nobody else needs to see it). Discord shows a token once; if it
    is lost or leaked, reset it again and update `.env`.
 3. **Public Bot**: off. Otherwise anyone with the client id could add the bot to their own server.
-4. **Privileged Gateway Intents**: turn on **SERVER MEMBERS INTENT** and **Save Changes**.
-   The bot needs it to see members join, read their roles and ping staff one by one.
-   It does not need Presence or Message Content.
-
-Without the members intent `python -m kit run` stops with "Turn on SERVER MEMBERS INTENT ...".
+4. **Privileged Gateway Intents**: turn on **SERVER MEMBERS INTENT** and **MESSAGE CONTENT INTENT**,
+   then **Save Changes**.
+   - Server Members: the bot sees members join, reads their roles and pings staff one by one.
+     Without it `python -m kit run` stops with "Turn on SERVER MEMBERS INTENT ...".
+   - Message Content: when a ticket is closed the bot reads the thread for the transcript; without this
+     switch Discord hands out other people's messages with empty text, and the transcript is blank
+     (the log then says so). The bot reads message text for nothing else.
+   - Presence is not needed.
 
 ## 3. Optional: the website login (OAuth2)
 
@@ -39,18 +42,30 @@ OAuth tokens on disk; a `guilds.join` token is kept in memory for 30 minutes and
 
 ## 4. Invite the bot
 
-`python -m kit.setup invite-url` prints the invite link (it reads the token from `.env`):
+`python -m kit.setup invite-url` prints the invite link (it reads the token from `.env`) and, under
+it, the permissions the link asks for. Scopes: `bot applications.commands`. The person opens the
+link, picks the server and authorizes.
 
-- `--admin` asks for Administrator. Simplest for the first `kit.setup build`, which creates roles
-  (including one with Administrator for the Team) and channels.
-- Without `--admin` it asks only for what the running bot needs: View Channels, Send Messages,
-  Send Messages in Threads, Create Private Threads, Manage Threads, Embed Links, Attach Files,
-  Read Message History, Mention Everyone (for the giveaway alert tag), Manage Roles, plus Create
-  Invite when `oauth.auto_join` is on.
+Two sets of permissions matter:
 
-Scopes: `bot applications.commands`. The person opens the link, picks the server and authorizes.
-After the build, they may untick Administrator on the bot's own role (Server Settings > Roles);
-the build already gave the bot what it needs in each channel.
+- **For the build** (`kit.setup build`): Manage Roles, Manage Channels and Manage Server, plus every
+  permission the template's roles and overwrites hand out, because Discord lets a bot grant or deny
+  only permissions it has itself. The default template creates the Team role with Administrator, so
+  the build needs Administrator: use `invite-url --admin`. `kit.setup plan` lists anything missing,
+  and `build` refuses up front (changing nothing) instead of failing halfway.
+- **For running** (what `invite-url` without `--admin` asks for): View Channels, Send Messages,
+  Embed Links, Attach Files, Read Message History, Mention @everyone, @here and All Roles (the
+  giveaway alert tag and staff pings), Manage Roles (holder roles, self-roles; this one can only come
+  from the bot's own role, never from channel permissions), Manage Threads, Create Private Threads and
+  Send Messages in Threads (tickets), plus Create Invite when `oauth.auto_join` is on (adding verified
+  people to the server).
+
+After the build you may drop Administrator, but not by simply unticking it: in Server Settings >
+Roles > the bot's own role, first turn on every permission of the running set above, then turn off
+Administrator, and keep the bot's role above the holder, tier, special and self-roles.
+`python -m kit.setup plan` notes any permission the bot's role still lacks. (Kicking the bot and
+inviting it again with the non-admin link also works, but its new role may land below the holder
+roles; drag it back up.)
 
 ## 5. Role order matters
 
@@ -63,4 +78,6 @@ drag the bot's role above them in Server Settings > Roles.
 
 The bot registers `/nft ...` for the one server in `discord.guild_id` when it starts; they appear at
 once (no hour-long global propagation). If they do not show up: the bot was invited without the
-`applications.commands` scope (use the invite link again) or the process is not running.
+`applications.commands` scope, or is not in that server (the log says "could not register the /nft
+commands ..."; the bot keeps running, so open the invite link again and restart), or the process is
+not running.

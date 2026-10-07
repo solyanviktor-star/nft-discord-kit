@@ -22,20 +22,21 @@ import aiohttp
 from . import panels, statefile, template
 from .config import ConfigError, Settings, load_env_file, load_settings
 from .rest import DiscordError, Rest
-from .template import BOT, CATEGORY, EVERYONE, PERMISSIONS, Plan, Template, core_name, overwrite_payload
+from .template import (BOT, CATEGORY, EVERYONE, PERMISSIONS, Plan, Template, core_name, overwrite_payload,
+                       permission_names, runtime_permissions)
 
-P = PERMISSIONS
-BOT_PERMISSIONS = (P["view_channel"] | P["send_messages"] | P["send_messages_in_threads"] | P["create_private_threads"]
-                   | P["manage_threads"] | P["embed_links"] | P["attach_files"] | P["read_message_history"]
-                   | P["mention_everyone"] | P["manage_roles"])
 FRESH = {"text-channels", "voice-channels", "general"}  # what Discord's "Create My Own" server starts with
 REASON = "nft-discord-kit setup"
 
 
+def invite_permissions(s: Settings, admin: bool) -> int:
+    """Administrator for the first build; otherwise exactly what the running bot needs."""
+    return PERMISSIONS["administrator"] if admin else runtime_permissions(s)
+
+
 def invite_url(application_id: int, s: Settings, admin: bool) -> str:
-    perms = P["administrator"] if admin else BOT_PERMISSIONS | (P["create_instant_invite"] if s.auto_join else 0)
     url = (f"https://discord.com/oauth2/authorize?client_id={application_id}&scope=bot+applications.commands"
-           f"&permissions={perms}")
+           f"&permissions={invite_permissions(s, admin)}")
     return url + (f"&guild_id={s.discord.guild_id}&disable_guild_select=true" if s.discord.guild_id else "")
 
 
@@ -110,6 +111,10 @@ async def cmd_build(rest: Rest, s: Settings, t: Template, yes: bool, data_dir: P
     print_plan(p, state)
     extra = [c["name"] for c in state["channels"] if core_name(c["name"]) not in FRESH]
     if p.actions:
+        if p.build_lack:  # stop before the first change instead of failing halfway with 50013
+            print(f"Nothing changed: the bot lacks {', '.join(permission_names(p.build_lack))}. Invite it with "
+                  "`python -m kit.setup invite-url --admin` for the build (see references/discord-app.md).")
+            return 1
         if extra:
             print(f"This server already has {len(extra)} channels of its own. The build only adds what is missing; "
                   "it never deletes, renames or moves anything.")
@@ -164,8 +169,9 @@ def explain(e: DiscordError) -> str:
     hints = {10004: "Unknown server: check discord.guild_id (python -m kit.setup guilds).",
              50001: "Missing Access: the bot is not in that server or cannot see that channel. "
                     "Open the invite-url link, or check the channel's permissions.",
-             50013: "Missing Permissions: for the first build invite the bot with `invite-url --admin`, or give "
-                    "its role Manage Roles and Manage Channels."}
+             50013: "Missing Permissions: for the build invite the bot with `invite-url --admin`, or give its role "
+                    "Manage Roles, Manage Channels and Manage Server plus every permission the template hands out "
+                    "(`python -m kit.setup plan` lists what is missing)."}
     if e.status == 401:
         return "Discord rejected DISCORD_TOKEN. Reset it (Developer Portal > Bot) and update .env."
     return hints.get(e.code, str(e))
@@ -179,6 +185,7 @@ async def dispatch(args: argparse.Namespace, s: Settings) -> int:
         if args.command == "invite-url":
             app_id = s.discord.application_id or int((await rest.request("GET", "/applications/@me"))["id"])
             print(invite_url(app_id, s, args.admin))
+            print("  asks for: " + ", ".join(permission_names(invite_permissions(s, args.admin))))
             return 0
         if args.command == "guilds":
             guilds = await rest.request("GET", "/users/@me/guilds")
@@ -204,7 +211,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--template", default="templates/server.toml", help="default: templates/server.toml")
     sub = parser.add_subparsers(dest="command", required=True)
     invite = sub.add_parser("invite-url", help="print the link that adds the bot to a server")
-    invite.add_argument("--admin", action="store_true", help="ask for Administrator (simplest for the first build)")
+    invite.add_argument("--admin", action="store_true",
+                        help="ask for Administrator (for the build); without it: only what the running bot needs")
     sub.add_parser("guilds", help="list the servers the bot is in")
     sub.add_parser("plan", help="read-only: show what build would create")
     build = sub.add_parser("build", help="create the missing roles, categories, channels and permissions")

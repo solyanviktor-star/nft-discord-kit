@@ -5,8 +5,9 @@ import pytest
 
 from conftest import APP, make_settings
 from kit.config import ConfigError
-from kit.template import (BOT, EVERYONE, PERMISSIONS as P, WRITE, core_name, load_template, overwrites_for,
-                          parse_template, plan)
+from kit.template import (ALL_PERMISSIONS, BOT, EVERYONE, PERMISSIONS as P, RUNTIME_PERMISSIONS, WRITE,
+                          bot_permissions, build_needs, core_name, load_template, overwrites_for, parse_template,
+                          permission_names, plan)
 
 TEMPLATE = load_template(APP / "templates" / "server.toml")
 SETTINGS = make_settings()
@@ -107,6 +108,22 @@ def test_template_problems():
                                         "channels": [{"name": "lounge", "roles": ["Nobody"]}]}]})
     with pytest.raises(ConfigError):
         plan(t, SETTINGS, fresh_state())
+
+
+def test_permissions_the_bot_has_and_needs():
+    admin = fresh_state(roles=[{"id": "1000", "name": "@everyone", "position": 0, "permissions": "0"},
+                               {"id": "50", "name": "kit-bot", "position": 5, "permissions": str(P["administrator"])}])
+    assert bot_permissions(admin) == ALL_PERMISSIONS
+    p = plan(TEMPLATE, SETTINGS, admin)
+    assert p.build_lack == 0 and not any("lacks" in n or "also needs" in n for n in p.notes)
+    runtime = fresh_state(roles=[{"id": "1000", "name": "@everyone", "position": 0, "permissions": "0"},
+                                 {"id": "50", "name": "kit-bot", "position": 5, "permissions": str(RUNTIME_PERMISSIONS)}])
+    p = plan(TEMPLATE, SETTINGS, runtime)
+    lacking = permission_names(p.build_lack)
+    assert {"Manage Channels", "Manage Server", "Administrator"} <= set(lacking)  # Team's Administrator, too
+    assert not any("The bot's role lacks" in n for n in p.notes)  # enough to run
+    assert build_needs([]) == 0
+    assert permission_names(P["view_channel"] | P["manage_guild"]) == ["Manage Server", "View Channels"]  # bit order
 
 
 def test_voice_and_public_presets():

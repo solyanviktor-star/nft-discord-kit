@@ -80,7 +80,8 @@ Then the person clicks through https://discord.com/developers/applications (deta
 `references/discord-app.md`):
 1. **New Application**, name it.
 2. **Bot** tab: **Reset Token**, copy it, paste it into `.env` as `DISCORD_TOKEN=` (they do it).
-   Turn **Public Bot** off. Under **Privileged Gateway Intents** turn on **SERVER MEMBERS INTENT**.
+   Turn **Public Bot** off. Under **Privileged Gateway Intents** turn on **SERVER MEMBERS INTENT**
+   (roles, joins) and **MESSAGE CONTENT INTENT** (without it ticket transcripts come out empty).
 3. Only if they want "Verify with Discord" on their site (needed for auto-join and for website
    raffles): **OAuth2** tab, add the redirect `https://<their domain>/auth/discord/callback`, reset
    the **Client Secret** and paste it into `.env` as `DISCORD_CLIENT_SECRET=`.
@@ -94,28 +95,39 @@ separated by commas are tried in order). A public endpoint works for small serve
 1. The person creates an empty server: Discord, **+** (Add a Server), **Create My Own**, **For me and
    my friends**, a name. An existing server works too (then plan carefully, see the guardrails).
 2. `cp config.example.toml config.toml` and set `project.name` (`guild_id` stays 0 for now).
-3. `python -m kit.setup invite-url --admin` prints the link that adds the bot with Administrator
-   (simplest for the first build). The person opens it, picks the server, authorizes.
+3. `python -m kit.setup invite-url --admin` prints the link that adds the bot with Administrator,
+   which the build needs (the template's Team role carries Administrator, and a bot can only hand out
+   permissions it has). The person opens it, picks the server, authorizes. Without `--admin` the link
+   asks only for what the running bot needs; it is for a server whose layout is built already.
 4. `python -m kit.setup guilds` lists the servers the bot is in. Put the id into `discord.guild_id`.
 
 ## Step 3: config
 
 Write `config.toml` from the interview answers (every key: `references/config.md`), keeping the
-comments. Run `python -m kit check`: it reports every problem at once (unknown keys included) and
-prints a summary without secrets. Fix everything it lists; show the person the summary.
+comments. Run `python -m kit check`: it reports every problem at once (unknown keys included, and the
+example's placeholder contract), prints a summary without secrets, and asks each collection's RPC
+whether the contract exists ("nothing is deployed at ..." means a wrong address or an RPC of another
+chain: fix it, or every reading stays unknown). Fix everything it lists; show the person the summary.
 
 ## Step 4: plan, then build
 
 1. `python -m kit.setup plan` is read-only (GET requests only). Show the person the list: roles,
    categories, channels, permission overwrites to add, server settings, plus any notes (a role that
-   sits above the bot, a channel that already exists elsewhere).
+   sits above the bot, a channel that already exists elsewhere, permissions the bot's role lacks).
 2. Adjust names and emojis in `templates/server.toml` if they want (`references/server-template.md`).
    If they rename a channel the bot uses, update `[channels]` in `config.toml` to match.
 3. After an explicit yes: `python -m kit.setup build --yes`. It creates only what is missing and
    saves the ids to `data/state.json`. Running it again is safe: it finds everything and adds nothing.
+   It refuses up front (changing nothing) if the bot lacks a permission the plan needs.
 4. Discord's default `general` channels stay; the person may delete them by hand.
-5. Optional hardening once built: Server Settings > Roles > the bot's own role > untick
-   **Administrator**; the channel permissions the build gave it are enough.
+5. Optional hardening once built (do not simply untick Administrator: Manage Roles cannot come from
+   channel permissions, and without it no holder role or self-role can be given). In Server Settings >
+   Roles > the bot's own role, first turn on exactly the permissions
+   `python -m kit.setup invite-url` lists under "asks for": View Channels, Send Messages, Embed Links,
+   Attach Files, Read Message History, Mention @everyone, @here and All Roles, Manage Roles, Manage
+   Threads, Create Private Threads, Send Messages in Threads (plus Create Invite with
+   `oauth.auto_join`); then turn off Administrator. Keep the bot's role above the holder, tier,
+   special and self-roles. Run `python -m kit.setup plan` again: it notes any permission still missing.
 
 ## Step 5: deploy
 

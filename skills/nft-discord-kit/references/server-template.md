@@ -83,3 +83,10 @@ python -m kit.setup build         # asks for confirmation; --yes to skip the que
 
 `build` creates roles first (permission overwrites need their ids), then each category followed by its
 channels, then the server defaults. Run it again any time: with nothing missing it does nothing.
+
+Permissions: the plan also compares what the bot's role may do with what the build and the running bot
+need. A bot can only create roles and overwrites with permissions it has itself, and the default Team
+role carries Administrator, so the build needs the bot invited with `invite-url --admin`; otherwise
+`build` stops before the first change and names what is missing. `plan` also notes when the bot's
+role lacks a permission the running bot needs (Manage Roles above all); see
+`references/discord-app.md` for dropping Administrator safely after the build.

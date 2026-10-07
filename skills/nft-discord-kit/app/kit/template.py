@@ -24,10 +24,21 @@ PERMISSIONS = {name: 1 << bit for bit, name in enumerate((
     "manage_events", "manage_threads", "create_public_threads", "create_private_threads",
     "use_external_stickers", "send_messages_in_threads", "use_embedded_activities", "moderate_members"))}
 P = PERMISSIONS
+ALL_PERMISSIONS = sum(PERMISSIONS.values())
 VIEW = P["view_channel"]
 VOICE = P["connect"] | P["speak"]
 WRITE = P["send_messages"] | P["send_messages_in_threads"] | P["create_public_threads"] | P["create_private_threads"]
 BOT_BASE = VIEW | P["send_messages"] | P["embed_links"] | P["attach_files"] | P["read_message_history"]
+# What the running bot needs server-wide (on its own role). Manage Roles can only come from a role:
+# without it no holder role, self-role or auto-join role can be given.
+RUNTIME_PERMISSIONS = (BOT_BASE | P["send_messages_in_threads"] | P["create_private_threads"] | P["manage_threads"]
+                       | P["mention_everyone"] | P["manage_roles"])
+# `build` additionally needs these, plus every permission the roles and overwrites it creates hand out
+# (Discord lets a bot grant or deny only permissions it has itself).
+BUILD_PERMISSIONS = P["manage_roles"] | P["manage_channels"] | P["manage_guild"]
+_DISPLAY = {"view_channel": "View Channels", "manage_guild": "Manage Server", "create_instant_invite": "Create Invite",
+            "mention_everyone": "Mention @everyone, @here and All Roles", "use_vad": "Use Voice Activity",
+            "moderate_members": "Timeout Members", "send_messages_in_threads": "Send Messages in Threads"}
 PRESETS = ("public", "public_readonly", "holders", "holders_readonly", "staff")
 CHANNEL_TYPES = {"text": 0, "voice": 2}
 CATEGORY = 4
@@ -98,6 +109,7 @@ class Action:
 class Plan:
     actions: list[Action]
     notes: list[str]
+    build_lack: int = 0  # permissions the bot lacks for these actions; 0 when it can build
 
 
 def core_name(name: str) -> str:
@@ -282,7 +294,52 @@ def plan(t: Template, s: Settings, state: Mapping[str, Any]) -> Plan:
     changes = {k: v for k, v in t.guild.items() if state["guild"].get(k) != v}
     if changes:
         actions.append(Action("update_guild", "server", changes))
-    return Plan(actions, notes)
+    have = bot_permissions(state)
+    if lack := runtime_permissions(s) & ~have:
+        notes.append(f"The bot's role lacks {', '.join(permission_names(lack))}: holder roles, self-roles, tickets "
+                     "or the alert tag will fail. Give its role these permissions (Server Settings > Roles), or "
+                     "invite it with `python -m kit.setup invite-url`.")
+    build_lack = build_needs(actions) & ~have
+    if build_lack:
+        notes.append(f"To build this, the bot also needs {', '.join(permission_names(build_lack))}. Simplest: invite "
+                     "it with `python -m kit.setup invite-url --admin` for the build.")
+    return Plan(actions, notes, build_lack)
+
+
+def permission_names(value: int) -> list[str]:
+    """Discord's display names for the permission bits in `value`."""
+    return [_DISPLAY.get(name, name.replace("_", " ").title()) for name, bit in PERMISSIONS.items() if value & bit]
+
+
+def runtime_permissions(s: Settings) -> int:
+    """What the bot's own role needs while running (the non-admin invite asks for exactly this)."""
+    return RUNTIME_PERMISSIONS | (P["create_instant_invite"] if s.auto_join else 0)
+
+
+def bot_permissions(state: Mapping[str, Any]) -> int:
+    """The bot's server-wide permissions: @everyone's and its roles'. Administrator means all of them."""
+    mine = {str(x) for x in state["bot_roles"]} | {str(state["guild"]["id"])}
+    value = 0
+    for r in state["roles"]:
+        if str(r["id"]) in mine:
+            value |= int(r.get("permissions") or 0)
+    return ALL_PERMISSIONS if value & P["administrator"] else value
+
+
+def build_needs(actions: Sequence[Action]) -> int:
+    """Permissions the bot needs to carry out these actions: managing roles, channels and the server, plus
+    every permission a new role or overwrite allows or denies (a bot can only hand out what it has)."""
+    need = 0
+    for a in actions:
+        if a.kind == "create_role":
+            need |= P["manage_roles"] | int(a.data["permissions"])
+        elif a.kind == "update_guild":
+            need |= P["manage_guild"]
+        else:
+            need |= P["manage_channels"] if a.kind != "add_overwrites" else 0
+            for _, (allow, deny) in a.data["overwrites"]:
+                need |= P["manage_roles"] | allow | deny
+    return need
 
 
 def overwrite_payload(target: str, allow_deny: tuple[int, int], ids: Mapping[str, str]) -> dict[str, Any]:
