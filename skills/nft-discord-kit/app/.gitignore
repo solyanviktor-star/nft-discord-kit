@@ -1,0 +1,7 @@
+# Keep secrets and runtime data out of git
+.env
+data/
+*.db
+.venv/
+__pycache__/
+.pytest_cache/

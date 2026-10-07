@@ -8,8 +8,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY kit ./kit
-COPY templates ./templates
+# The app, the template and config.toml when present (.dockerignore keeps .env and data/ out).
+# docker-compose.yml mounts config.toml over it, so edits there need no rebuild.
+COPY . .
 
 # Run as a normal user; SQLite and the generated session secret live in the /data volume.
 RUN useradd --create-home --uid 10001 kit && mkdir -p /data && chown kit:kit /data
@@ -18,7 +19,6 @@ VOLUME ["/data"]
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=4)" || exit 1
+  CMD python -c "import os, urllib.request; urllib.request.urlopen('http://localhost:%s/healthz' % os.environ.get('PORT', '8080'), timeout=4)" || exit 1
 
-# config.toml is mounted at /app/config.toml (see docker-compose.yml); secrets come from the environment.
 CMD ["python", "-m", "kit", "run"]
