@@ -98,3 +98,17 @@ def settings() -> Settings:
 @pytest.fixture
 def reader() -> FakeReader:
     return FakeReader()
+
+
+@pytest.fixture
+async def discord_api(aiohttp_server, monkeypatch, tmp_path):
+    """A fake Discord REST API (tests/restfake.py) that kit.rest talks to instead of discord.com."""
+    from kit import rest
+    from restfake import FakeDiscord
+
+    fake = FakeDiscord()
+    server = await aiohttp_server(fake.app())
+    fake.url = str(server.make_url("")).rstrip("/")
+    monkeypatch.setattr(rest, "API", fake.url)
+    monkeypatch.setenv("KIT_DATA_DIR", str(tmp_path))
+    return fake

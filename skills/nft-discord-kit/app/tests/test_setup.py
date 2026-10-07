@@ -1,7 +1,6 @@
 """`python -m kit.setup` against a fake Discord REST API: plan is read-only, build only creates, panels refresh."""
 from __future__ import annotations
 
-import argparse
 import json
 import subprocess
 import sys
@@ -12,84 +11,7 @@ from aiohttp import web
 
 from conftest import APP, make_settings
 from kit import rest, setup, template
-
-TEMPLATE = str(APP / "templates" / "server.toml")
-
-
-class FakeDiscord:
-    """Just enough of the Discord API for the setup commands; records every request."""
-
-    def __init__(self) -> None:
-        self.requests: list[tuple[str, str, object]] = []
-        self.ids = iter(range(5000, 9000))
-        self.guild = {"id": "1000", "name": "Fresh Server", "verification_level": 0, "default_message_notifications": 0,
-                      "explicit_content_filter": 0,
-                      "roles": [{"id": "1000", "name": "@everyone", "position": 0, "permissions": "0"},
-                                {"id": "50", "name": "kit-bot", "position": 1, "managed": True,
-                                 "permissions": "8"}]}  # invited with --admin
-        self.channels = [{"id": "60", "name": "Text Channels", "type": 4, "permission_overwrites": []},
-                         {"id": "61", "name": "general", "type": 0, "parent_id": "60", "permission_overwrites": []},
-                         {"id": "62", "name": "Voice Channels", "type": 4, "permission_overwrites": []},
-                         {"id": "63", "name": "General", "type": 2, "parent_id": "62", "permission_overwrites": []}]
-        self.messages: dict[str, dict] = {}
-
-    def app(self) -> web.Application:
-        app = web.Application()
-        app.router.add_route("*", "/{tail:.*}", self.handle)
-        return app
-
-    async def handle(self, request: web.Request) -> web.Response:
-        body = await request.json() if request.can_read_body else None
-        method, path = request.method, request.path
-        self.requests.append((method, path, body))
-        g = "/guilds/1000"
-        if method == "GET":
-            routes = {"/users/@me": {"id": "1", "username": "kit-bot"}, "/applications/@me": {"id": "1234"},
-                      "/users/@me/guilds": [{"id": "1000", "name": "Fresh Server"}], g: self.guild,
-                      g + "/channels": self.channels, g + "/members/1": {"roles": ["50"]}}
-            return web.json_response(routes[path]) if path in routes else web.json_response({"code": 0}, status=404)
-        if method == "POST" and path == g + "/roles":
-            for role in self.guild["roles"]:
-                role["position"] += role["position"] > 0  # Discord puts a new role right above @everyone
-            role = {"id": str(next(self.ids)), "position": 1, **body}
-            self.guild["roles"].append(role)
-            return web.json_response(role)
-        if method == "POST" and path == g + "/channels":
-            channel = {"id": str(next(self.ids)), **body}
-            self.channels.append(channel)
-            return web.json_response(channel)
-        if method == "PUT" and path.startswith("/channels/") and "/permissions/" in path:
-            cid, target = path.split("/")[2], path.split("/")[4]
-            channel = next(c for c in self.channels if c["id"] == cid)
-            channel.setdefault("permission_overwrites", []).append({"id": target, **body})
-            return web.Response(status=204)
-        if method == "PATCH" and path == g:
-            self.guild.update(body)
-            return web.json_response(self.guild)
-        if method == "POST" and path.endswith("/messages"):
-            mid = str(next(self.ids))
-            self.messages[mid] = body
-            return web.json_response({"id": mid})
-        if method == "PATCH" and "/messages/" in path:
-            mid = path.rsplit("/", 1)[1]
-            if mid not in self.messages:
-                return web.json_response({"code": 10008, "message": "Unknown Message"}, status=404)
-            self.messages[mid] = body
-            return web.json_response({"id": mid})
-        return web.json_response({"code": 0, "message": "not faked"}, status=405)
-
-
-@pytest.fixture
-async def discord_api(aiohttp_server, monkeypatch, tmp_path):
-    fake = FakeDiscord()
-    server = await aiohttp_server(fake.app())
-    monkeypatch.setattr(rest, "API", str(server.make_url("")).rstrip("/"))
-    monkeypatch.setenv("KIT_DATA_DIR", str(tmp_path))
-    return fake
-
-
-def args(command: str, **kw) -> argparse.Namespace:
-    return argparse.Namespace(command=command, template=TEMPLATE, yes=kw.get("yes", False), admin=kw.get("admin", False))
+from restfake import args
 
 
 async def test_plan_only_reads(discord_api, capsys):
@@ -157,15 +79,17 @@ async def test_panels_post_then_refresh(discord_api, capsys):
 async def test_invite_url_and_guilds(discord_api, capsys):
     s = make_settings()
     await setup.dispatch(args("invite-url"), s)
-    await setup.dispatch(args("invite-url", admin=True), s)
-    await setup.dispatch(args("guilds"), s)
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].startswith("https://discord.com/oauth2/authorize?client_id=1234&scope=bot+applications.commands")
     assert f"permissions={template.RUNTIME_PERMISSIONS}&" in lines[0]
     assert lines[1].startswith("  asks for: View Channels, Send Messages, ") and "Manage Roles" in lines[1]
-    assert "permissions=8&" in lines[2] and lines[3] == "  asks for: Administrator"
-    assert lines[4] == "1000  Fresh Server"
-    assert {m for m, _, _ in discord_api.requests} == {"GET"}
+    assert lines[2] == "Application 'Kit Test' (id 1234):" and lines[3].startswith("  intents already on")
+    await setup.dispatch(args("invite-url", admin=True), s)
+    lines = capsys.readouterr().out.splitlines()
+    assert "permissions=8&" in lines[0] and lines[1] == "  asks for: Administrator"
+    await setup.dispatch(args("guilds"), s)
+    assert capsys.readouterr().out.splitlines() == ["1000  Fresh Server"]
+    assert {m for m, _, _ in discord_api.requests} == {"GET"}  # intents on and branding set: nothing to change
     joining = make_settings(env={"DISCORD_CLIENT_SECRET": "x"}, oauth={"auto_join": True})
     assert setup.invite_permissions(joining, admin=False) & template.P["create_instant_invite"]
 

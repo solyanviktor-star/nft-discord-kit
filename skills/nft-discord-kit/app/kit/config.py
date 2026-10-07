@@ -581,6 +581,28 @@ def load_settings(path: Path, env: Mapping[str, str] | None = None, require_runt
     return parse_settings(raw, os.environ if env is None else env, path.parent, require_runtime, strict)
 
 
+def set_guild_id(text: str, guild_id: int) -> str:
+    """config.toml text with discord.guild_id set: the existing line edited in place (spacing and comment
+    kept), else a line added under [discord], else a new [discord] table at the end."""
+    lines = text.split("\n")
+    table, header = None, None
+    for i, line in enumerate(lines):
+        if re.match(r"\s*\[\[", line):
+            table = None  # an array of tables: not [discord]
+            continue
+        if m := re.match(r"\s*\[([^\[\]]+)\]\s*(#.*)?$", line):
+            table = m.group(1).strip()
+            header = i if table == "discord" else header
+            continue
+        if table == "discord" and (m := re.match(r"""(\s*guild_id\s*=\s*)("[^"]*"|'[^']*'|[^\s#]*)(.*)$""", line)):
+            lines[i] = f"{m.group(1)}{guild_id}{m.group(3)}"
+            return "\n".join(lines)
+    if header is not None:
+        lines.insert(header + 1, f"guild_id = {guild_id}")
+        return "\n".join(lines)
+    return text.rstrip("\n") + f"\n\n[discord]\nguild_id = {guild_id}\n"
+
+
 def read_env_file(path: Path) -> dict[str, str]:
     """KEY=VALUE lines from a .env file; `#` comments; optional quotes. A missing file gives {}."""
     out: dict[str, str] = {}
@@ -598,6 +620,17 @@ def read_env_file(path: Path) -> dict[str, str]:
             value = value[1:-1]
         out[key] = value
     return out
+
+
+def set_env_value(text: str, key: str, value: str) -> str:
+    """.env text with `key` set: its line replaced in place, or one line added at the end. Nothing else moves."""
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if re.match(rf"\s*(export\s+)?{re.escape(key)}\s*=", line):
+            lines[i] = f"{key}={value}"
+            return "\n".join(lines)
+    body = text.rstrip("\n")
+    return (body + "\n" if body else "") + f"{key}={value}\n"
 
 
 def load_env_file(path: Path) -> None:

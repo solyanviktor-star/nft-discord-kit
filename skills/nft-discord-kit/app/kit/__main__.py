@@ -1,8 +1,9 @@
 """python -m kit run | check
 
   run     start the Discord bot and the verification website (one long-running process)
-  check   validate config.toml and .env, print a summary (secrets are never printed), and ask each
-          collection's RPC whether its contract exists (--offline skips that)
+  check   validate config.toml and .env, print a summary (secrets are never printed), show the bot's
+          privileged intents (on / limited / off), and ask each collection's RPC whether its contract
+          exists (--offline skips both)
 
 The server builder is a separate command: python -m kit.setup --help
 """
@@ -56,13 +57,27 @@ def summary(s: Settings) -> str:
     ])
 
 
-async def contract_warnings(s: Settings) -> list[str]:
+async def online_checks(s: Settings) -> list[str]:
+    """What only Discord and the RPCs can tell: the bot's privileged intents and whether the contracts exist."""
     import aiohttp
 
+    from .application import intent_states
     from .reader import HoldingsReader
+    from .rest import DiscordError, Rest
     logging.getLogger("kit.evm").setLevel(logging.ERROR)  # the warnings below say it in one line each
+    lines = []
     async with aiohttp.ClientSession() as session:
-        return await HoldingsReader(s, session).contract_warnings()
+        if s.discord_token:
+            try:
+                app = await Rest(session, s.discord_token, read_only=True).request("GET", "/applications/@me")
+                states = intent_states(int(app.get("flags") or 0))
+                shown = ", ".join(f"{name} {'on (limited)' if st == 'limited' else st}" for name, st in states.items())
+                hint = " — `python -m kit.setup app` turns them on" if "off" in states.values() else ""
+                lines.append(f"Intents:     {shown}{hint}")
+            except (DiscordError, aiohttp.ClientError, TimeoutError) as e:
+                lines.append(f"Intents:     unknown (Discord answered: {e})")
+        lines += [f"Warning: {w}" for w in await HoldingsReader(s, session).contract_warnings()]
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,7 +85,8 @@ def main(argv: list[str] | None = None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["run", "check"])
     parser.add_argument("--config", default=os.environ.get("KIT_CONFIG", "config.toml"), help="default: config.toml")
-    parser.add_argument("--offline", action="store_true", help="check: skip asking the RPCs about the contracts")
+    parser.add_argument("--offline", action="store_true",
+                        help="check: skip asking Discord about the intents and the RPCs about the contracts")
     args = parser.parse_args(argv)
     load_env_file(Path(".env"))
     try:
@@ -81,8 +97,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         print(summary(settings))
         if not args.offline:
-            for warning in asyncio.run(contract_warnings(settings)):
-                print(f"Warning: {warning}")
+            for line in asyncio.run(online_checks(settings)):
+                print(line)
         return 0
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     import discord  # only `run` needs discord.py
@@ -94,8 +110,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Discord rejected DISCORD_TOKEN. Reset the token (Developer Portal > Bot) and update .env.", file=sys.stderr)
         return 1
     except discord.PrivilegedIntentsRequired:
-        print("Turn on SERVER MEMBERS INTENT (Developer Portal > Bot > Privileged Gateway Intents), then restart.",
-              file=sys.stderr)
+        print("The bot's SERVER MEMBERS INTENT is off: run `python -m kit.setup app` (or Developer Portal > Bot > "
+              "Privileged Gateway Intents), then restart.", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         pass

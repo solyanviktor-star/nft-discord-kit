@@ -9,7 +9,7 @@ logo_url = ""                        # optional https:// image shown on the site
 public_url = "https://verify.example.com"   # where the site is served (the PUBLIC_URL env var wins)
 
 [discord]
-guild_id = 0                         # your server id: run `python -m kit.setup guilds`
+guild_id = 0                         # your server id: `python -m kit.setup guilds --wait` fills it in
 application_id = 0                   # optional; read from the bot token when 0
 staff_roles = ["Team", "Mod"]        # role names (prefixes) that count as staff: every team command
 raffle_manager_roles = ["Raffle Manager"]   # these roles run raffle commands only
