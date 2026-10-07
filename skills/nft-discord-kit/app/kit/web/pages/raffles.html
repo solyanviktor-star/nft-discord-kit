@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Giveaways | {{project}}</title>
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/static/kit.css">
+</head>
+<body {{flags}}>
+<main class="card wide">
+  <header class="brand">{{logo}}<span>{{project}}</span></header>
+  <h1>Giveaways</h1>
+  <p id="account" class="account"></p>
+  <p id="msg" class="msg" role="status" aria-live="polite"></p>
+  <ul id="list" class="raffles"></ul>
+  <footer class="foot">Entering uses the wallets you linked in Discord. Tickets are counted from your NFTs at the moment of the draw.</footer>
+</main>
+<script src="/static/raffles.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "nft-discord-kit",
+  "owner": {
+    "name": "nft-discord-kit contributors"
+  },
+  "metadata": {
+    "description": "One plugin: an agent playbook that builds a holder-gated Discord server, raffle bot and wallet verification site for any NFT project.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "nft-discord-kit",
+      "source": "./",
+      "description": "Build a holder-gated Discord server for an NFT project: server layout, wallet verification site with on-chain holder roles, raffles, support tickets and self-roles.",
+      "version": "0.1.0",
+      "category": "productivity",
+      "keywords": [
+        "discord",
+        "nft",
+        "web3",
+        "token-gating",
+        "raffle"
+      ]
+    }
+  ]
+}

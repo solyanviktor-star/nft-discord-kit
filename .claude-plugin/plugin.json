@@ -1,0 +1,19 @@
+{
+  "name": "nft-discord-kit",
+  "version": "0.1.0",
+  "description": "Build a holder-gated Discord server for an NFT project: server layout, wallet verification site with on-chain holder roles, raffles, support tickets and self-roles.",
+  "author": {
+    "name": "nft-discord-kit contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "discord",
+    "nft",
+    "web3",
+    "token-gating",
+    "holder-verification",
+    "raffle",
+    "giveaway",
+    "support-tickets"
+  ]
+}
